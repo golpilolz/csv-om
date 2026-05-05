@@ -20,6 +20,8 @@
       "Golpilolz\\CsvOm\\Tests\\": "tests/"
     }
   },
-  "require": {},
+  "require": {
+    "league/csv": "^9.28"
+  },
   "minimum-stability": "dev"
 }
