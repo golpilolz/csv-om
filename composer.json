@@ -1,0 +1,25 @@
+{
+  "name": "golpilolz/csv-om",
+  "type": "symfony-bundle",
+  "description": "Object manager for CSV files",
+  "keywords": ["bundle", "symfony"],
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Golpilolz and other contributors",
+      "homepage": "https://github.com/golpilolz/csv-om/graphs/contributors"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Golpilolz\\CsvOm\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Golpilolz\\CsvOm\\Tests\\": "tests/"
+    }
+  },
+  "require": {},
+  "minimum-stability": "dev"
+}
