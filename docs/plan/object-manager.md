@@ -40,9 +40,9 @@ The code was adapted from a Redis OM and the CSV side is not implemented:
 
 | Doctrine concept | csv-om class | Responsibility |
 |---|---|---|
-| Mapping attributes | `Mapping\Entity`, `Mapping\Id`, `Mapping\Column` | Declarative mapping. `Entity(file, repositoryClass, delimiter, enclosure)`, `Column(name, type, nullable)`. No runtime objects inside attributes. |
-| ClassMetadata | `Metadata\ClassMetadata` | File name, id field, field → column map, field types. |
-| MetadataFactory | `Metadata\MetadataFactory` | Builds metadata from attributes via reflection, cached per class. |
+| Mapping attributes | `Om\Mapping\Entity`, `Om\Mapping\Id`, `Om\Mapping\Column`, `Om\Mapping\Types` | Declarative mapping. `Entity(file, repositoryClass, delimiter, enclosure)`, `Column(name, type, nullable)`. No runtime objects inside attributes. |
+| ClassMetadata | `Om\Metadata\ClassMetadata`, `Om\Metadata\FieldMapping` | File name, id field, field → column map, field types. |
+| MetadataFactory | `Om\Metadata\MetadataFactory` | Builds metadata from attributes via reflection, cached per class. |
 | Connection / DBAL | `Storage\CsvStorage` (+ interface) | Reads/writes a file with league/csv. Base directory injected. |
 | Types | `Type\TypeConverter` | `string`, `int`, `float`, `bool`, `datetime_immutable`, `BackedEnum`; `''` ↔ `null` when nullable. |
 | Hydrator | `Hydrator\ObjectHydrator` | Row ↔ object through reflection (private props supported, constructor bypassed). |
@@ -84,12 +84,14 @@ golpilolz_csv_om:
 
 Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fixtures`).
 
-1. **Housekeeping**
+1. **Housekeeping** — ✅ done
    - `composer.json`: require `php >=8.3`, `league/csv ^9.28`, `symfony/config|dependency-injection|http-kernel ^6.4|^7.0`;
      dev: `phpunit/phpunit`; add `phpunit.xml.dist`, `tests/`.
    - Remove Redis leftovers and `var_dump`s.
-2. **Mapping & metadata**
+2. **Mapping & metadata** — ✅ done
    - Attributes `Entity`, `Id`, `Column` (replace `Property`).
+   - `Column` infers `type`/`nullable` from the property type; backed enums map to their backing type + `enumType`.
+   - Column name defaults to the property name; `#[Id]` alone implies a column; id must be non-nullable `int`/`string`.
    - `ClassMetadata`, `MetadataFactory` with validation (exactly one `#[Id]`, entity attribute present) and clear exceptions.
 3. **Storage**
    - `CsvStorageInterface::read(string $file, ...): iterable<array<string,string>>` and `write(...)`.

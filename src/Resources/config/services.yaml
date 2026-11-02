@@ -1,9 +1,17 @@
 parameters:
 
 services:
+  golpilolz_csv_om.metadata_factory:
+    class: Golpilolz\CsvOm\Om\Metadata\MetadataFactory
+
   golpilolz_csv_om.object_manager:
     class: Golpilolz\CsvOm\Om\CSVObjectManager
     public: true
+    arguments:
+      $metadataFactory: '@golpilolz_csv_om.metadata_factory'
 
   Golpilolz\CsvOm\Om\CSVObjectManagerInterface:
     alias: golpilolz_csv_om.object_manager
+
+  Golpilolz\CsvOm\Om\Metadata\MetadataFactory:
+    alias: golpilolz_csv_om.metadata_factory
