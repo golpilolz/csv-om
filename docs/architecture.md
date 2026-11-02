@@ -56,9 +56,11 @@ go in the identity map keyed by canonical id, so later reads return the same ins
 1. extracts each managed object's canonical cells and compares them with the row in the `Table`;
 2. builds the new content of every changed file (changed rows get mapped cells replaced; unchanged rows and
    unmapped cells are written back verbatim; new rows are appended);
-3. validates **all** files before writing any;
+3. validates **all** files before writing any, including that none changed since it was loaded (each `Table`
+   and join file keeps the `Fingerprint` taken when it was read; mismatch → `ConcurrentModificationException`);
 4. commits file by file through `CsvStorage` (temp file, `fsync`, `rename`, under `flock` on the
-   `.<file>.lock` sidecar).
+   `.<file>.lock` sidecar), checking the fingerprint again under the lock and renewing the write token that
+   the sidecar holds.
 
 ## Invariants to preserve
 
@@ -79,7 +81,9 @@ go in the identity map keyed by canonical id, so later reads return the same ins
 
 - **Custom repositories**: extend `CSVRepository`; services implementing `RepositoryInterface` are
   autoconfigured with the `golpilolz_csv_om.repository` tag and reachable via `getRepository()`.
-- **Storage**: `CsvStorageInterface` is injected into `ObjectManager`, which makes it replaceable in tests.
+- **Storage**: `CsvStorageInterface` is injected into `ObjectManager`, which makes it replaceable in tests. A
+  replacement must implement `fingerprint()` and honour `write()`'s `$expectedFingerprint` (throw
+  `ConcurrentModificationException`, write nothing) for the concurrency check to work.
 - **Deprecated**: `CSVObjectManagerInterface` (interface and service alias) stays for BC.
 
 ## Working on the bundle
@@ -93,5 +97,4 @@ Keep the README and docs/ in sync when behavior, options or exceptions change, a
 
 ## Follow-up ideas
 
-- Optimistic concurrency: remember each file's mtime/size (or hash) at load and make `flush()` fail, under the
-  write lock, if the file changed since, turning today's silent lost update into an error.
+- Optional retry/merge helper around `ConcurrentModificationException` (today: `clear()` and redo).

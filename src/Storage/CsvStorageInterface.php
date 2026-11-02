@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Storage;
 
+use Golpilolz\CsvOm\Exception\ConcurrentModificationException;
 use Golpilolz\CsvOm\Exception\StorageException;
 
 /**
@@ -30,13 +31,23 @@ interface CsvStorageInterface
     public function open(string $file, ?string $delimiter = null, ?string $enclosure = null): CsvStream;
 
     /**
+     * Version of the file as it is now (see {@see Fingerprint}): the empty string when it does not exist.
+     */
+    public function fingerprint(string $file): string;
+
+    /**
      * Atomically replaces the file content. Each row must have exactly the header columns as keys;
      * null values are written as empty fields.
      *
      * @param list<string> $header
      * @param iterable<array<string, string|null>> $rows
      *
+     * @param string|null $expectedFingerprint when given, the file must still be in that version (the empty
+     *        string: still missing), checked under the write lock; null skips the check
+     * @return string fingerprint of the file as written
+     *
      * @throws StorageException
+     * @throws ConcurrentModificationException when the file is not in the expected version; nothing is written
      */
-    public function write(string $file, array $header, iterable $rows, ?string $delimiter = null, ?string $enclosure = null): void;
+    public function write(string $file, array $header, iterable $rows, ?string $delimiter = null, ?string $enclosure = null, ?string $expectedFingerprint = null): string;
 }

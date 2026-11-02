@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Om;
 
+use Golpilolz\CsvOm\Exception\ConcurrentModificationException;
 use Golpilolz\CsvOm\Exception\ConversionException;
 use Golpilolz\CsvOm\Exception\HydrationException;
 use Golpilolz\CsvOm\Exception\PersistenceException;
@@ -29,6 +30,7 @@ use Golpilolz\CsvOm\Om\Query\Expression;
 use Golpilolz\CsvOm\Om\Query\Operator;
 use Golpilolz\CsvOm\Om\Type\TypeConverter;
 use Golpilolz\CsvOm\Storage\CsvStorageInterface;
+use Golpilolz\CsvOm\Storage\Fingerprint;
 
 /**
  * Loads entity files on demand, keeps the identity map and writes changes back on flush().
@@ -56,7 +58,7 @@ final class UnitOfWork
     /** @var array<int, array{class: class-string, id: string, state: int}> spl_object_id => entity state */
     private array $states = [];
 
-    /** @var array<string, array{header: list<string>, extra: list<string>, rows: list<array{raw: array<string, string>, owner: string, target: string}>}> "Owner::field" => loaded many-to-many join file */
+    /** @var array<string, array{header: list<string>, extra: list<string>, rows: list<array{raw: array<string, string>, owner: string, target: string}>, fingerprint: string}> "Owner::field" => loaded many-to-many join file */
     private array $joinTables = [];
 
     private readonly MetadataFactory $metadataFactory;
@@ -276,6 +278,14 @@ final class UnitOfWork
         }
         $joinPlans = $this->computeJoinChanges();
 
+        // Nothing is written if any file changed behind our back (the storage checks again under the lock).
+        foreach ($plans as $className => $plan) {
+            $this->assertUnchanged($this->metadata[$className]->file, $this->getTable($this->metadata[$className])->fingerprint);
+        }
+        foreach ($joinPlans as $key => $plan) {
+            $this->assertUnchanged($plan['file'], $this->joinTables[$key]['fingerprint']);
+        }
+
         foreach ($plans as $className => $plan) {
             $metadata = $this->metadata[$className];
             $table = $this->getTable($metadata);
@@ -300,6 +310,7 @@ final class UnitOfWork
                 })(),
                 $metadata->delimiter,
                 $metadata->enclosure,
+                $table->fingerprint,
             );
 
             // The file changed: forget its index and loaded columns, the next read loads it again.
@@ -314,7 +325,7 @@ final class UnitOfWork
 
         foreach ($joinPlans as $key => $plan) {
             $header = $plan['header'];
-            $this->storage->write(
+            $fingerprint = $this->storage->write(
                 $plan['file'],
                 $header,
                 (static function () use ($plan, $header): \Generator {
@@ -324,8 +335,10 @@ final class UnitOfWork
                 })(),
                 $plan['delimiter'],
                 $plan['enclosure'],
+                $this->joinTables[$key]['fingerprint'],
             );
             $this->joinTables[$key]['rows'] = $plan['rows'];
+            $this->joinTables[$key]['fingerprint'] = $fingerprint;
         }
 
         // Post events fire once every file is written (none fires if a write failed).
@@ -335,6 +348,13 @@ final class UnitOfWork
             }
         }
         $this->dispatchFlush(Events::POST_FLUSH);
+    }
+
+    private function assertUnchanged(string $file, string $loadedFingerprint): void
+    {
+        if ($this->storage->fingerprint($file) !== $loadedFingerprint) {
+            throw ConcurrentModificationException::forFile($file);
+        }
     }
 
     private function dispatchFlush(string $event): void
@@ -531,7 +551,7 @@ final class UnitOfWork
     private function load(ClassMetadata $metadata): Table
     {
         if (!$this->storage->exists($metadata->file)) {
-            return new Table($metadata->getColumnNames(), [], new RowIndex());
+            return new Table($metadata->getColumnNames(), [], new RowIndex(), Fingerprint::MISSING);
         }
 
         $stream = $this->storage->open($metadata->file, $metadata->delimiter, $metadata->enclosure);
@@ -569,6 +589,7 @@ final class UnitOfWork
             $stream->header,
             array_values(array_diff($stream->header, $metadata->getColumnNames())),
             new RowIndex($offsets, $stream),
+            $stream->fingerprint,
         );
     }
 
@@ -741,7 +762,7 @@ final class UnitOfWork
      * Loaded many-to-many join file of an owning association.
      *
      * @param ClassMetadata<object> $owner
-     * @return array{header: list<string>, extra: list<string>, rows: list<array{raw: array<string, string>, owner: string, target: string}>}
+     * @return array{header: list<string>, extra: list<string>, rows: list<array{raw: array<string, string>, owner: string, target: string}>, fingerprint: string}
      */
     private function joinTable(ClassMetadata $owner, AssociationMapping $association): array
     {
@@ -753,8 +774,10 @@ final class UnitOfWork
         $file = (string) $association->joinFile;
         $ownerColumn = (string) $association->joinOwnerColumn;
         $targetColumn = (string) $association->joinTargetColumn;
+        // Taken before reading: if the file changes in between, the flush fails instead of overwriting it.
+        $fingerprint = $this->storage->fingerprint($file);
         if (!$this->storage->exists($file)) {
-            return $this->joinTables[$key] = ['header' => [$ownerColumn, $targetColumn], 'extra' => [], 'rows' => []];
+            return $this->joinTables[$key] = ['header' => [$ownerColumn, $targetColumn], 'extra' => [], 'rows' => [], 'fingerprint' => $fingerprint];
         }
 
         $target = $this->metadataFactory->getMetadataFor($association->targetEntity);
@@ -782,6 +805,7 @@ final class UnitOfWork
             'header' => $csv->header,
             'extra' => array_values(array_diff($csv->header, [$ownerColumn, $targetColumn])),
             'rows' => $rows,
+            'fingerprint' => $fingerprint,
         ];
     }
 

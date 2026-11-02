@@ -331,12 +331,18 @@ final class FlushTest extends TestCase
                 return $this->inner->open($file, $delimiter, $enclosure);
             }
 
-            public function write(string $file, array $header, iterable $rows, ?string $delimiter = null, ?string $enclosure = null): void
+            public function fingerprint(string $file): string
+            {
+                return $this->inner->fingerprint($file);
+            }
+
+            public function write(string $file, array $header, iterable $rows, ?string $delimiter = null, ?string $enclosure = null, ?string $expectedFingerprint = null): string
             {
                 if ($this->failBooks && $file === 'library/books.csv') {
                     throw new StorageException('disk full');
                 }
-                $this->inner->write($file, $header, $rows, $delimiter, $enclosure);
+
+                return $this->inner->write($file, $header, $rows, $delimiter, $enclosure, $expectedFingerprint);
             }
         };
         $om = new ObjectManager($storage);

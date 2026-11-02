@@ -180,12 +180,27 @@ The bundle's own `tests/CsvDirectoryTrait.php` and `tests/Fixtures/` show a full
 
 ## Concurrency
 
-Writes are atomic and serialized, but two processes that load then flush the same file each write
-their own version: **the last one wins** and the first one's change is lost silently. Mitigations:
+Writes are atomic and serialized. If another process (or a hand edit) changed a file after your object
+manager loaded it, `flush()` throws a `ConcurrentModificationException` and writes **nothing** to any file,
+instead of overwriting that change. Nothing is merged or retried for you; the objects keep their pending
+changes, so redo the work on fresh data:
 
-- keep one writer per file (a CLI import, a single admin user);
-- re-read just before writing: `$om->clear(); $book = $om->find(...)` then change and `flush()` right away;
-- use string ids (UUID) so concurrent inserts don't pick the same number.
+```php
+for ($attempt = 0; $attempt < 3; ++$attempt) {
+    try {
+        $book = $om->find(Book::class, 7);
+        $book->setStock($book->getStock() - 1);
+        $om->flush();
+        break;
+    } catch (ConcurrentModificationException) {
+        $om->clear();   // forget the stale data, the next find() reads the file again
+    }
+}
+```
+
+- keep one writer per file when a retry loop is not worth it (a CLI import, a single admin user);
+- use string ids (UUID) so concurrent inserts don't pick the same number;
+- the check happens at `flush()`, so keep the time between loading and flushing short.
 
 ## Troubleshooting
 

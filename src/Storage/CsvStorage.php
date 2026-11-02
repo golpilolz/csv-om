@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Storage;
 
+use Golpilolz\CsvOm\Exception\ConcurrentModificationException;
 use Golpilolz\CsvOm\Exception\StorageException;
 use League\Csv\Exception as CsvException;
 use League\Csv\Reader;
@@ -15,7 +16,9 @@ use League\Csv\Writer;
  * Writes go to a temporary file in the target directory, which is then renamed over the target,
  * so readers always see a complete file. Concurrent writers are serialized with an exclusive
  * flock() on a sidecar ".<file>.lock" file (the target itself cannot be locked: rename() replaces it).
- * This does not prevent lost updates between two processes that both read then write.
+ * Two processes that both read then write would still overwrite each other: pass the fingerprint
+ * seen at read time to write() (see {@see Fingerprint}) to turn that into a
+ * {@see ConcurrentModificationException}.
  */
 final class CsvStorage implements CsvStorageInterface
 {
@@ -96,7 +99,12 @@ final class CsvStorage implements CsvStorageInterface
         );
     }
 
-    public function write(string $file, array $header, iterable $rows, ?string $delimiter = null, ?string $enclosure = null): void
+    public function fingerprint(string $file): string
+    {
+        return Fingerprint::ofPath($this->path($file));
+    }
+
+    public function write(string $file, array $header, iterable $rows, ?string $delimiter = null, ?string $enclosure = null, ?string $expectedFingerprint = null): string
     {
         $path = $this->path($file);
         $delimiter = $this->resolve('delimiter', $delimiter, $this->delimiter);
@@ -109,7 +117,7 @@ final class CsvStorage implements CsvStorageInterface
             throw StorageException::writeFailed($path, sprintf('directory "%s" cannot be created', $dir));
         }
 
-        $lock = @fopen($dir . '/.' . basename($path) . '.lock', 'c');
+        $lock = @fopen(Fingerprint::lockPath($path), 'c');
         if ($lock === false) {
             throw StorageException::writeFailed($path, 'cannot open lock file');
         }
@@ -120,6 +128,10 @@ final class CsvStorage implements CsvStorageInterface
 
         $tmp = null;
         try {
+            if ($expectedFingerprint !== null && Fingerprint::ofPath($path) !== $expectedFingerprint) {
+                throw ConcurrentModificationException::forFile($path);
+            }
+
             $tmp = @tempnam($dir, '.' . basename($path) . '.');
             if ($tmp === false || dirname($tmp) !== $dir) {
                 // tempnam() falls back to the system temp dir, where rename() would not be atomic.
@@ -140,6 +152,13 @@ final class CsvStorage implements CsvStorageInterface
                 throw StorageException::writeFailed($path, 'cannot replace the file');
             }
             $tmp = null;
+
+            // A new token for every write: the version changes even if size, time and inode do not.
+            if (@ftruncate($lock, 0) === false || @rewind($lock) === false || @fwrite($lock, bin2hex(random_bytes(8))) === false || !@fflush($lock)) {
+                throw StorageException::writeFailed($path, 'cannot update the lock file');
+            }
+
+            return Fingerprint::ofPath($path);
         } finally {
             if ($tmp !== null) {
                 @unlink($tmp);

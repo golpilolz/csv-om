@@ -24,6 +24,7 @@ final class Table
     /**
      * @param list<string> $header header of the file (mapped columns first when the file did not exist)
      * @param list<string> $extraColumns columns present in the file but not mapped; kept so they can be written back
+     * @param string $fingerprint version of the file when it was loaded (empty: it did not exist), see {@see \Golpilolz\CsvOm\Storage\Fingerprint}
      * @param RowIndex $rows raw cells (mapped and extra columns) as read, by canonical id, in file order; rows are
      *        read from the file on demand
      */
@@ -31,6 +32,7 @@ final class Table
         public readonly array $header,
         public readonly array $extraColumns,
         public readonly RowIndex $rows,
+        public readonly string $fingerprint = '',
     ) {
     }
 }

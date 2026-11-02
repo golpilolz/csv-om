@@ -229,8 +229,10 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
 
 - ✅ Generated ids: `#[GeneratedValue]` (`INCREMENT` = max + 1, `UUID` = v4), generated at `persist()` time.
 
-- Optimistic concurrency: remember each file's mtime/size (or hash) at load and make `flush()` fail, under the
-  write lock, if the file changed since — turns today's silent lost update between processes into an error.
+- ✅ Optimistic concurrency: each file's `Fingerprint` (write token kept in the sidecar lock file + inode/size/mtime)
+  is taken at load; `flush()` checks all files up front and `CsvStorage::write()` checks again under the lock,
+  throwing `ConcurrentModificationException`. Always on. `CsvStream::records()` also refuses to pair the old row
+  offsets with a replaced file.
 
 ## Out of scope (v1)
 

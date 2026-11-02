@@ -7,11 +7,16 @@
   query filters or sorts on it, and kept for the request. `findAll()` and wide queries still build one object
   per matching row, so they need memory in proportion to the result. A cell with an unclosed quote swallows the
   rest of the file as one value.
-- **No protection against lost updates between processes.** Writes are atomic (temporary file, `fsync`, then
-  `rename()`, so readers never see a partial file), and concurrent writers are serialized with `flock()` on a
-  `.<file>.lock` file kept next to each data file. But two processes that both load and then flush the same file
-  each write their own version, and the last one wins.
-  This also applies to `#[GeneratedValue]` increments: concurrent processes can generate the same id. Use `UUID`.
+- **Concurrent writers get an error, not a merge.** Writes are atomic (temporary file, `fsync`, then
+  `rename()`, so readers never see a partial file) and serialized with `flock()` on a `.<file>.lock` file kept
+  next to each data file. If a file changed since this object manager loaded it, `flush()` throws a
+  `ConcurrentModificationException` and writes nothing to it, so no update is lost silently. There is no
+  automatic retry or merge: `clear()` and redo the change (see [Concurrency](cookbook.md#concurrency)).
+  The check compares a version token that every write of the bundle renews, plus the file's inode, size and
+  modification time. An edit made outside the bundle that keeps the inode, the size and the modification
+  second is not detected.
+  `#[GeneratedValue]` increments are picked at `persist()` time, so concurrent processes can generate the same
+  id; the second `flush()` then gets the exception. Use `UUID` for several writers.
 - **`flush()` is not a transaction across files.** All changes are validated before any file is written, so a
   bad value writes nothing. If a write fails on disk, files already written keep their changes and the rest stay
   pending for the next `flush()`.

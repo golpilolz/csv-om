@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Storage;
 
+use Golpilolz\CsvOm\Exception\ConcurrentModificationException;
 use Golpilolz\CsvOm\Exception\StorageException;
 
 /**
@@ -20,6 +21,12 @@ final class CsvStream
     /** @var list<string> */
     public readonly array $header;
 
+    /** Version of the file this stream reads, see {@see Fingerprint}. */
+    public readonly string $fingerprint;
+
+    /** Stat part of the fingerprint: the file read by every other handle must be the same one. */
+    private readonly string $statKey;
+
     /** Byte offset of the first data record. */
     private int $dataStart;
 
@@ -29,6 +36,10 @@ final class CsvStream
         private readonly string $enclosure,
     ) {
         $this->handle = $this->openHandle();
+        // From the open handle, not the path: it is exactly the file the rows will be read from.
+        $stat = fstat($this->handle);
+        $this->statKey = Fingerprint::statKey($stat);
+        $this->fingerprint = Fingerprint::of($this->path, $stat);
 
         $header = [];
         while (($record = fgetcsv($this->handle, null, $this->delimiter, $this->enclosure, '')) !== false) {
@@ -64,10 +75,19 @@ final class CsvStream
      * iterated while {@see self::rowAt()} is called.
      *
      * @return \Generator<int, array<string, string>>
+     *
+     * @throws ConcurrentModificationException when the file was replaced since the stream was opened
      */
     public function records(): \Generator
     {
         $handle = $this->openHandle($this->dataStart);
+        // The row offsets belong to the file this stream was opened on: if it was replaced, pairing them with
+        // the rows of the new file would mix up the data.
+        if (Fingerprint::statKey(fstat($handle)) !== $this->statKey) {
+            fclose($handle);
+
+            throw ConcurrentModificationException::forFile($this->path);
+        }
         $count = count($this->header);
         $row = 0;
 

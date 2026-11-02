@@ -19,6 +19,7 @@ All exceptions are in `Golpilolz\CsvOm\Exception`:
 |---|---|---|
 | `MappingException` | `LogicException` | invalid attributes, non-entity class, repository/entity mismatch |
 | `StorageException` | `RuntimeException` | missing directory, unreadable or malformed file, missing mapped column, duplicate id, failed write |
+| `ConcurrentModificationException` | `RuntimeException` | `flush()` on a file that changed since it was loaded (nothing is written); also when a file is replaced while its rows are still being read |
 | `ConversionException` | `RuntimeException` | a cell or property value that doesn't match its type |
 | `HydrationException` | `RuntimeException` | uninitialized non-nullable property on write, wrong object class |
 | `QueryException` | `InvalidArgumentException` | unknown field, invalid criterion, order direction, limit or offset |
