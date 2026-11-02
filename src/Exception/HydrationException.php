@@ -26,6 +26,11 @@ final class HydrationException extends \RuntimeException
         return new self(sprintf('Cannot assign %s to property "%s::$%s".', get_debug_type($value), $className, $field), 0, $previous);
     }
 
+    public static function danglingReference(string $className, ?string $id, string $field, string $target, string $targetId): self
+    {
+        return new self(sprintf('Entity "%s"%s references "%s" with id "%s" through "%s", but it does not exist.', $className, self::id($id), $target, $targetId, $field));
+    }
+
     private static function id(?string $id): string
     {
         return $id !== null ? sprintf(' (id "%s")', $id) : '';

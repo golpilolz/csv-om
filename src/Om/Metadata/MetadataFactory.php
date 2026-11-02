@@ -5,7 +5,15 @@ declare(strict_types=1);
 namespace Golpilolz\CsvOm\Om\Metadata;
 
 use Golpilolz\CsvOm\Exception\MappingException;
+use Golpilolz\CsvOm\Om\Collection\Collection;
+use Golpilolz\CsvOm\Om\Mapping\Association;
 use Golpilolz\CsvOm\Om\Mapping\Column;
+use Golpilolz\CsvOm\Om\Mapping\JoinColumn;
+use Golpilolz\CsvOm\Om\Mapping\JoinTable;
+use Golpilolz\CsvOm\Om\Mapping\ManyToMany;
+use Golpilolz\CsvOm\Om\Mapping\ManyToOne;
+use Golpilolz\CsvOm\Om\Mapping\OneToMany;
+use Golpilolz\CsvOm\Om\Mapping\OneToOne;
 use Golpilolz\CsvOm\Om\Mapping\Entity;
 use Golpilolz\CsvOm\Om\Mapping\Id;
 use Golpilolz\CsvOm\Om\Mapping\Types;
@@ -60,8 +68,26 @@ final class MetadataFactory
         $entity = $entityAttributes[0]->newInstance();
 
         $fieldMappings = [];
+        $associationMappings = [];
         $idFields = [];
+        $file = $entity->file ?? self::defaultFileName($class->getShortName());
         foreach ($class->getProperties() as $property) {
+            $associationAttributes = $property->getAttributes(Association::class, \ReflectionAttribute::IS_INSTANCEOF);
+            if ($associationAttributes !== []) {
+                if (count($associationAttributes) > 1) {
+                    throw MappingException::multipleAssociations($className, $property->getName());
+                }
+                if ($property->getAttributes(Id::class) !== [] || $property->getAttributes(Column::class) !== []) {
+                    throw MappingException::associationAndColumn($className, $property->getName());
+                }
+                if ($property->isStatic()) {
+                    throw MappingException::staticProperty($className, $property->getName());
+                }
+                $associationMappings[$property->getName()] = $this->buildAssociationMapping($className, $file, $property, $associationAttributes[0]->newInstance());
+
+                continue;
+            }
+
             $isId = $property->getAttributes(Id::class) !== [];
             $columnAttributes = $property->getAttributes(Column::class);
             if (!$isId && $columnAttributes === []) {
@@ -93,6 +119,17 @@ final class MetadataFactory
             throw MappingException::multipleIds($className, $idFields);
         }
 
+        $usedColumns = array_map(static fn (FieldMapping $m) => $m->columnName, $fieldMappings);
+        foreach ($associationMappings as $association) {
+            if ($association->joinMapping === null) {
+                continue;
+            }
+            if (in_array($association->joinMapping->columnName, $usedColumns, true)) {
+                throw MappingException::duplicateColumn($className, $association->joinMapping->columnName);
+            }
+            $usedColumns[] = $association->joinMapping->columnName;
+        }
+
         $idMapping = $fieldMappings[$idFields[0]];
         if ($idMapping->enumType === null && !in_array($idMapping->type, [Types::INT, Types::STRING], true)) {
             throw MappingException::invalidIdType($className, $idMapping->fieldName, $idMapping->type);
@@ -112,7 +149,6 @@ final class MetadataFactory
             }
         }
 
-        $file = $entity->file ?? self::defaultFileName($class->getShortName());
         if ($file === '' || str_starts_with($file, '/') || in_array('..', explode('/', str_replace('\\', '/', $file)), true)) {
             throw MappingException::invalidFile($className, $file);
         }
@@ -125,7 +161,173 @@ final class MetadataFactory
             fieldMappings: $fieldMappings,
             delimiter: $entity->delimiter,
             enclosure: $entity->enclosure,
+            associationMappings: $associationMappings,
         );
+    }
+
+    private function buildAssociationMapping(string $className, string $ownerFile, \ReflectionProperty $property, Association $attribute): AssociationMapping
+    {
+        $field = $property->getName();
+        $target = ltrim($attribute->getTargetEntity(), '\\');
+        if (!$this->isEntity($target)) {
+            throw MappingException::targetNotAnEntity($className, $field, $target);
+        }
+        $target = (new \ReflectionClass($target))->getName();
+
+        foreach ($attribute->getCascade() as $cascade) {
+            if ($cascade !== 'persist') {
+                throw MappingException::invalidCascade($className, $field, (string) $cascade);
+            }
+        }
+
+        [$type, $mappedBy, $inversedBy] = match (true) {
+            $attribute instanceof ManyToOne => [AssociationMapping::MANY_TO_ONE, null, $attribute->inversedBy],
+            $attribute instanceof OneToMany => [AssociationMapping::ONE_TO_MANY, $attribute->mappedBy, null],
+            $attribute instanceof OneToOne => [AssociationMapping::ONE_TO_ONE, $attribute->mappedBy, $attribute->inversedBy],
+            default => [AssociationMapping::MANY_TO_MANY, $attribute->getMappedBy(), $attribute->getInversedBy()],
+        };
+        if ($mappedBy !== null && $inversedBy !== null) {
+            throw MappingException::unexpectedAttribute($className, $field, (new \ReflectionClass($attribute))->getShortName(), 'mappedBy and inversedBy cannot both be set');
+        }
+        $owning = $type === AssociationMapping::MANY_TO_ONE || ($type !== AssociationMapping::ONE_TO_MANY && $mappedBy === null);
+        $toOne = $type === AssociationMapping::MANY_TO_ONE || $type === AssociationMapping::ONE_TO_ONE;
+
+        $joinColumn = ($property->getAttributes(JoinColumn::class)[0] ?? null)?->newInstance();
+        $joinTable = ($property->getAttributes(JoinTable::class)[0] ?? null)?->newInstance();
+        if ($joinColumn !== null && !($toOne && $owning)) {
+            throw MappingException::unexpectedAttribute($className, $field, 'JoinColumn', 'only the owning side of a to-one association is stored in a column');
+        }
+        if ($joinTable !== null && !($type === AssociationMapping::MANY_TO_MANY && $owning)) {
+            throw MappingException::unexpectedAttribute($className, $field, 'JoinTable', 'only the owning side of a many-to-many has a join file');
+        }
+
+        // The other side must exist and point back here.
+        $otherName = $mappedBy ?? $inversedBy;
+        if ($otherName !== null) {
+            $this->assertCounterpart($className, $field, $type, $owning, $target, $otherName);
+        }
+
+        $this->assertPropertyType($className, $property, $target, $toOne);
+
+        if (!$toOne) {
+            $mapping = ['joinFile' => null, 'joinOwnerColumn' => null, 'joinTargetColumn' => null];
+            if ($type === AssociationMapping::MANY_TO_MANY && $owning) {
+                $stem = (string) preg_replace('/\\.csv$/i', '', $ownerFile);
+                $ownerColumn = $joinTable?->joinColumn ?? self::stem((new \ReflectionClass($className))->getShortName()) . '_id';
+                $targetColumn = $joinTable?->inverseJoinColumn ?? self::stem((new \ReflectionClass($target))->getShortName()) . '_id';
+                if ($ownerColumn === $targetColumn) {
+                    throw $joinTable?->joinColumn !== null || $joinTable?->inverseJoinColumn !== null
+                        ? MappingException::duplicateJoinColumns($className, $field)
+                        : MappingException::selfReferencingJoinTable($className, $field);
+                }
+                $file = $joinTable?->file ?? $stem . '_' . self::stem($field) . '.csv';
+                if ($file === '' || str_starts_with($file, '/') || in_array('..', explode('/', str_replace('\\', '/', $file)), true)) {
+                    throw MappingException::invalidFile($className, $file);
+                }
+                $mapping = ['joinFile' => $file, 'joinOwnerColumn' => $ownerColumn, 'joinTargetColumn' => $targetColumn];
+            }
+
+            return new AssociationMapping($field, $type, $target, $mappedBy, $inversedBy, in_array('persist', $attribute->getCascade(), true), ...$mapping);
+        }
+
+        $allowsNull = $property->getType() === null || $property->getType()->allowsNull();
+        if ($joinColumn?->nullable === true && !$allowsNull) {
+            throw MappingException::nullableMismatch($className, $field);
+        }
+        $nullable = $joinColumn?->nullable ?? $allowsNull;
+        if (!$owning) {
+            return new AssociationMapping($field, $type, $target, $mappedBy, $inversedBy, in_array('persist', $attribute->getCascade(), true), $nullable);
+        }
+
+        $onDelete = $joinColumn?->onDelete ?? JoinColumn::RESTRICT;
+        if (!in_array($onDelete, [JoinColumn::RESTRICT, JoinColumn::SET_NULL, JoinColumn::CASCADE], true)) {
+            throw MappingException::invalidOnDelete($className, $field, $onDelete);
+        }
+        if ($onDelete === JoinColumn::SET_NULL && (!$nullable || $property->isReadOnly())) {
+            throw MappingException::setNullNotNullable($className, $field);
+        }
+
+        $id = $this->targetIdMapping($target);
+        $joinMapping = new FieldMapping(
+            fieldName: $field,
+            columnName: $joinColumn?->name ?? $field . '_id',
+            type: $id->type,
+            nullable: $nullable,
+            enumType: $id->enumType,
+        );
+
+        return new AssociationMapping($field, $type, $target, $mappedBy, $inversedBy, in_array('persist', $attribute->getCascade(), true), $nullable, $joinMapping, $onDelete);
+    }
+
+    /**
+     * Checks that "$target::$other" is the matching side of the association at "$className::$field":
+     * an owning side needs an inverse side naming it in mappedBy; an inverse side needs an owning side.
+     */
+    private function assertCounterpart(string $className, string $field, string $type, bool $owning, string $target, string $other): void
+    {
+        $targetClass = new \ReflectionClass($target);
+        $property = $targetClass->hasProperty($other) ? $targetClass->getProperty($other) : null;
+        $attribute = ($property?->getAttributes(Association::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null)?->newInstance();
+
+        $expectedClass = match ($type) {
+            AssociationMapping::MANY_TO_ONE => OneToMany::class,
+            AssociationMapping::ONE_TO_MANY => ManyToOne::class,
+            AssociationMapping::ONE_TO_ONE => OneToOne::class,
+            default => ManyToMany::class,
+        };
+
+        $ok = $attribute instanceof $expectedClass
+            && ltrim($attribute->getTargetEntity(), '\\') === $className
+            && ($owning
+                ? $attribute->getMappedBy() === $field
+                : $attribute->getMappedBy() === null && ($attribute->getInversedBy() === null || $attribute->getInversedBy() === $field));
+
+        if (!$ok) {
+            throw MappingException::missingInverse($className, $field, $target, $other, $owning
+                ? sprintf('an inverse #[%s] with mappedBy: \'%s\'', (new \ReflectionClass($expectedClass))->getShortName(), $field)
+                : sprintf('an owning #[%s]', (new \ReflectionClass($expectedClass))->getShortName()));
+        }
+    }
+
+    private function assertPropertyType(string $className, \ReflectionProperty $property, string $target, bool $toOne): void
+    {
+        $type = $property->getType();
+        if ($type === null) {
+            return;
+        }
+        if (!$type instanceof \ReflectionNamedType) {
+            throw MappingException::invalidAssociationType($className, $property->getName(), $toOne ? $target : Collection::class, (string) $type);
+        }
+        $name = $type->getName();
+        $valid = $toOne
+            ? (is_a($target, $name, true) || $name === 'object' || $name === 'mixed')
+            : ($name === Collection::class || $name === 'mixed');
+        if (!$valid) {
+            throw MappingException::invalidAssociationType($className, $property->getName(), $toOne ? $target : Collection::class, $name);
+        }
+    }
+
+    /**
+     * Mapping of the #[Id] property of a target entity, without building the target's whole metadata
+     * (which could loop back here).
+     */
+    private function targetIdMapping(string $target): FieldMapping
+    {
+        foreach ((new \ReflectionClass($target))->getProperties() as $property) {
+            if ($property->getAttributes(Id::class) === []) {
+                continue;
+            }
+            $column = ($property->getAttributes(Column::class)[0] ?? null)?->newInstance() ?? new Column();
+
+            return $this->buildFieldMapping($target, $property, $column);
+        }
+
+        throw MappingException::missingId($target);
+    }
+
+    private static function stem(string $name): string
+    {
+        return substr(self::defaultFileName($name), 0, -4);
     }
 
     private function buildFieldMapping(string $className, \ReflectionProperty $property, Column $column): FieldMapping

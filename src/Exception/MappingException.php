@@ -97,4 +97,59 @@ final class MappingException extends \LogicException
     {
         return new self(sprintf('File "%s" of CSV entity "%s" must be a relative path without "..".', $file, $className));
     }
+
+    public static function associationAndColumn(string $className, string $field): self
+    {
+        return new self(sprintf('"%s::$%s" cannot be both a column (#[Id], #[Column]) and an association.', $className, $field));
+    }
+
+    public static function multipleAssociations(string $className, string $field): self
+    {
+        return new self(sprintf('"%s::$%s" has several association attributes; exactly one is allowed.', $className, $field));
+    }
+
+    public static function targetNotAnEntity(string $className, string $field, string $target): self
+    {
+        return new self(sprintf('Target "%s" of association "%s::$%s" is not a CSV entity.', $target, $className, $field));
+    }
+
+    public static function invalidCascade(string $className, string $field, string $value): self
+    {
+        return new self(sprintf('Unsupported cascade "%s" on "%s::$%s"; only "persist" is supported.', $value, $className, $field));
+    }
+
+    public static function invalidAssociationType(string $className, string $field, string $expected, string $actual): self
+    {
+        return new self(sprintf('Association "%s::$%s" must be typed "%s" (or untyped), "%s" given.', $className, $field, $expected, $actual));
+    }
+
+    public static function unexpectedAttribute(string $className, string $field, string $attribute, string $reason): self
+    {
+        return new self(sprintf('#[%s] on "%s::$%s" is not allowed: %s.', $attribute, $className, $field, $reason));
+    }
+
+    public static function missingInverse(string $className, string $field, string $target, string $property, string $expected): self
+    {
+        return new self(sprintf('Association "%s::$%s" refers to "%s::$%s", which must be %s.', $className, $field, $target, $property, $expected));
+    }
+
+    public static function invalidOnDelete(string $className, string $field, string $value): self
+    {
+        return new self(sprintf('Invalid onDelete "%s" on "%s::$%s", expected RESTRICT, SET NULL or CASCADE.', $value, $className, $field));
+    }
+
+    public static function setNullNotNullable(string $className, string $field): self
+    {
+        return new self(sprintf('onDelete "SET NULL" on "%s::$%s" requires a nullable, non-readonly association.', $className, $field));
+    }
+
+    public static function selfReferencingJoinTable(string $className, string $field): self
+    {
+        return new self(sprintf('Self-referencing many-to-many "%s::$%s" needs explicit joinColumn and inverseJoinColumn names in #[JoinTable].', $className, $field));
+    }
+
+    public static function duplicateJoinColumns(string $className, string $field): self
+    {
+        return new self(sprintf('#[JoinTable] of "%s::$%s" must use two different column names.', $className, $field));
+    }
 }

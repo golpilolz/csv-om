@@ -146,7 +146,7 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
    - README: installation, configuration, mapping reference, supported types, limitations (whole-file loading,
      no concurrent-write guarantees beyond `flock`, no associations).
 
-9. **Associations** — ⏳ planned
+9. **Associations** — ✅ done (maker support still to do)
    Goal: relate entities like Doctrine does, with the same attribute names, so that
    `$book->author` / `$author->books` work and `flush()` keeps the CSV files consistent.
 
@@ -207,7 +207,15 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
    Tests: metadata validation errors, hydration identity (same instance across both sides), update/insert/
    delete of FK and join rows, `onDelete` behaviours, dangling reference error, criteria by object, flush
    atomicity with several files, round-trip keeps unmapped columns.
-   Open questions: use `doctrine/collections` as a dependency for `Collection` (preferred, matches the
+   Done as: own minimal `Collection` (no `doctrine/collections` dependency). Join columns are `FieldMapping`s
+   inside `ClassMetadata::$columnMappings` (so rows, dirty checking, criteria and sorting reuse the scalar code);
+   the factory reads the target's `#[Id]` by reflection to type them, avoiding metadata cycles. The unit of
+   work resolves relations right after registering the object in the identity map. Deviations: a reference to
+   an unmanaged target is rejected at `flush()` (not `persist()`), so the target can be persisted afterwards;
+   `onDelete` lives on `JoinColumn` of the owning side; `onDelete` discovery covers inverse sides and entities
+   already in use (a one-way `ManyToOne` from a never-loaded class is not seen). Not done: `make:csv-entity`
+   relation prompts.
+   Open questions (resolved above): use `doctrine/collections` as a dependency for `Collection` (preferred, matches the
    Doctrine-like API) or ship a minimal own implementation; composite/`ManyToMany` extra columns on the join
    file (not supported initially); self-referencing relations (supported by design, test needed).
 

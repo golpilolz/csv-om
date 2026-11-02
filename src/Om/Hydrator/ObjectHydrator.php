@@ -56,7 +56,7 @@ final class ObjectHydrator
                 throw ConversionException::forEntity($metadata->className, $id, $e);
             }
 
-            $this->set($metadata->className, $object, $field, $value);
+            $this->setProperty($metadata->className, $object, $field, $value);
         }
 
         return $object;
@@ -119,7 +119,25 @@ final class ObjectHydrator
         }
     }
 
-    private function set(string $className, object $object, string $field, mixed $value): void
+    /**
+     * Current value of a mapped property, or null when it is not initialized.
+     */
+    public function getProperty(string $className, object $object, string $field): mixed
+    {
+        $property = $this->property($className, $field);
+
+        return $property->isInitialized($object) ? $property->getValue($object) : null;
+    }
+
+    public function isInitialized(string $className, object $object, string $field): bool
+    {
+        return $this->property($className, $field)->isInitialized($object);
+    }
+
+    /**
+     * Writes a property regardless of its visibility (readonly properties only while uninitialized).
+     */
+    public function setProperty(string $className, object $object, string $field, mixed $value): void
     {
         $declaringClass = $this->property($className, $field)->getDeclaringClass()->getName();
 

@@ -25,4 +25,9 @@ final class QueryException extends \InvalidArgumentException
     {
         return new self(sprintf('"%s" must be a positive integer, %d given.', $option, $value));
     }
+
+    public static function invalidAssociationValue(string $className, string $field, string $reason): self
+    {
+        return new self(sprintf('Invalid value for association "%s" of entity "%s": %s.', $field, $className, $reason));
+    }
 }

@@ -33,7 +33,7 @@ final class ObjectManager implements CSVObjectManagerInterface
     ) {
         $converter ??= new TypeConverter();
         $this->metadataFactory = $metadataFactory ?? new MetadataFactory();
-        $this->unitOfWork = new UnitOfWork($storage, new ObjectHydrator($converter), $converter);
+        $this->unitOfWork = new UnitOfWork($storage, new ObjectHydrator($converter), $converter, $this->metadataFactory);
     }
 
     public function find(string $className, mixed $id): ?object
