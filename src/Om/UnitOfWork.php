@@ -9,6 +9,11 @@ use Golpilolz\CsvOm\Exception\HydrationException;
 use Golpilolz\CsvOm\Exception\PersistenceException;
 use Golpilolz\CsvOm\Exception\QueryException;
 use Golpilolz\CsvOm\Exception\StorageException;
+use Golpilolz\CsvOm\Om\Event\EventManager;
+use Golpilolz\CsvOm\Om\Event\Events;
+use Golpilolz\CsvOm\Om\Event\FlushEventArgs;
+use Golpilolz\CsvOm\Om\Event\LifecycleEventArgs;
+use Golpilolz\CsvOm\Om\Event\PreUpdateEventArgs;
 use Golpilolz\CsvOm\Om\Hydrator\ObjectHydrator;
 use Golpilolz\CsvOm\Om\Collection\Collection;
 use Golpilolz\CsvOm\Om\Mapping\GeneratedValue;
@@ -56,11 +61,16 @@ final class UnitOfWork
 
     private readonly MetadataFactory $metadataFactory;
 
+    /** @var array<string, \ReflectionMethod> "Class::method" => entity callback */
+    private array $callbackReflections = [];
+
     public function __construct(
         private readonly CsvStorageInterface $storage,
         private readonly ObjectHydrator $hydrator,
         private readonly TypeConverter $converter,
         ?MetadataFactory $metadataFactory = null,
+        private readonly ?EventManager $eventManager = null,
+        private readonly ?ObjectManagerInterface $objectManager = null,
     ) {
         $this->metadataFactory = $metadataFactory ?? new MetadataFactory();
     }
@@ -147,6 +157,9 @@ final class UnitOfWork
             return;
         }
 
+        // Before the id is read, so the event can set it (or a date, a slug, ...).
+        $this->fire(Events::PRE_PERSIST, $metadata, $object);
+
         $id = $this->hydrator->extractId($metadata, $object);
         if ($id === null && $metadata->idGenerator !== null) {
             $id = $this->generateId($metadata);
@@ -221,6 +234,9 @@ final class UnitOfWork
             return;
         }
 
+        if ($state['state'] === self::STATE_MANAGED) {
+            $this->fire(Events::PRE_REMOVE, $metadata, $object);
+        }
         $this->states[$oid]['state'] = self::STATE_REMOVED;
     }
 
@@ -243,14 +259,19 @@ final class UnitOfWork
      */
     public function flush(): void
     {
+        $this->dispatchFlush(Events::PRE_FLUSH);
         $this->cascadePersist();
         $this->processRemovals();
 
         $plans = [];
+        $postEvents = [Events::POST_PERSIST => [], Events::POST_UPDATE => [], Events::POST_REMOVE => []];
         foreach ($this->identityMap as $className => $objects) {
             $plan = $this->computeChanges($this->metadata[$className], $objects);
             if ($plan !== null) {
                 $plans[$className] = $plan;
+                foreach ($plan['events'] as [$event, $object]) {
+                    $postEvents[$event][] = [$this->metadata[$className], $object];
+                }
             }
         }
         $joinPlans = $this->computeJoinChanges();
@@ -306,6 +327,56 @@ final class UnitOfWork
             );
             $this->joinTables[$key]['rows'] = $plan['rows'];
         }
+
+        // Post events fire once every file is written (none fires if a write failed).
+        foreach ($postEvents as $event => $entries) {
+            foreach ($entries as [$metadata, $object]) {
+                $this->fire($event, $metadata, $object);
+            }
+        }
+        $this->dispatchFlush(Events::POST_FLUSH);
+    }
+
+    private function dispatchFlush(string $event): void
+    {
+        if ($this->eventManager?->hasListeners($event)) {
+            $this->eventManager->dispatch($event, new FlushEventArgs($this->objectManager ?? throw $this->noObjectManager()));
+        }
+    }
+
+    /**
+     * Runs the entity callbacks, then the listeners, of an event. Returns whether anything ran.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param array<string, array{0: mixed, 1: mixed}>|null $changeSet only for preUpdate
+     */
+    private function fire(string $event, ClassMetadata $metadata, object $object, ?array $changeSet = null): bool
+    {
+        $callbacks = $metadata->lifecycleCallbacks[$event] ?? [];
+        $listening = $this->eventManager?->hasListeners($event) ?? false;
+        if ($callbacks === [] && !$listening) {
+            return false;
+        }
+
+        $objectManager = $this->objectManager ?? throw $this->noObjectManager();
+        $args = $changeSet === null
+            ? new LifecycleEventArgs($object, $objectManager)
+            : new PreUpdateEventArgs($object, $objectManager, $changeSet);
+
+        foreach ($callbacks as $method) {
+            $reflection = $this->callbackReflections[$metadata->className . '::' . $method] ??= new \ReflectionMethod($metadata->className, $method);
+            $reflection->getNumberOfParameters() === 0 ? $reflection->invoke($object) : $reflection->invoke($object, $args);
+        }
+        if ($listening) {
+            $this->eventManager->dispatch($event, $args);
+        }
+
+        return true;
+    }
+
+    private function noObjectManager(): \LogicException
+    {
+        return new \LogicException('Lifecycle events need the UnitOfWork to be created by an ObjectManager.');
     }
 
     /**
@@ -346,7 +417,7 @@ final class UnitOfWork
     /**
      * @param ClassMetadata<object> $metadata
      * @param array<string, object> $objects canonical id => object
-     * @return array{changes: array<string, array<string, string>>, removedIds: array<string, true>, inserted: list<int>, removed: list<int>}|null
+     * @return array{changes: array<string, array<string, string>>, removedIds: array<string, true>, inserted: list<int>, removed: list<int>, events: list<array{0: string, 1: object}>}|null
      */
     private function computeChanges(ClassMetadata $metadata, array $objects): ?array
     {
@@ -355,6 +426,7 @@ final class UnitOfWork
         $removedIds = [];
         $inserted = [];
         $removed = [];
+        $events = [];
         $changed = false;
 
         foreach ($objects as $id => $object) {
@@ -365,6 +437,7 @@ final class UnitOfWork
             if ($state === self::STATE_REMOVED) {
                 $removedIds[$id] = true;
                 $removed[] = $oid;
+                $events[] = [Events::POST_REMOVE, $object];
                 $changed = true;
                 continue;
             }
@@ -378,11 +451,23 @@ final class UnitOfWork
             if ($state === self::STATE_NEW) {
                 $raw = array_fill_keys($table->extraColumns, '');
                 $inserted[] = $oid;
+                $events[] = [Events::POST_PERSIST, $object];
             } else {
                 $original = $table->rows[$id];
                 if ($this->sameValues($metadata, $cells, $original)) {
                     continue;
                 }
+                // The event may still change the object: the row is computed again afterwards.
+                if ($this->fire(Events::PRE_UPDATE, $metadata, $object, $this->changeSet($metadata, $object, $cells, $original))) {
+                    $cells = $this->hydrator->extract($metadata, $object) + $this->associationCells($metadata, $object, $id);
+                    if ($cells[$metadata->getIdColumn()] !== $id) {
+                        throw PersistenceException::identifierChanged($metadata->className, $id, $cells[$metadata->getIdColumn()]);
+                    }
+                    if ($this->sameValues($metadata, $cells, $original)) {
+                        continue;
+                    }
+                }
+                $events[] = [Events::POST_UPDATE, $object];
                 // Keep unmapped cells as read; replace mapped ones.
                 $raw = $original;
             }
@@ -394,7 +479,30 @@ final class UnitOfWork
             $changed = true;
         }
 
-        return $changed ? ['changes' => $changes, 'removedIds' => $removedIds, 'inserted' => $inserted, 'removed' => $removed] : null;
+        return $changed ? ['changes' => $changes, 'removedIds' => $removedIds, 'inserted' => $inserted, 'removed' => $removed, 'events' => $events] : null;
+    }
+
+    /**
+     * Scalar fields whose current value differs from the loaded row: field => [value in the file, current value].
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param array<string, ?string> $cells column => canonical value, from the object
+     * @param array<string, string> $original the row as loaded
+     * @return array<string, array{0: mixed, 1: mixed}>
+     */
+    private function changeSet(ClassMetadata $metadata, object $object, array $cells, array $original): array
+    {
+        $changes = [];
+        foreach ($metadata->fieldMappings as $field => $mapping) {
+            if ($cells[$mapping->columnName] !== $this->canonicalCell($metadata, $mapping, $original[$mapping->columnName])) {
+                $changes[$field] = [
+                    $this->converter->toPhp($original[$mapping->columnName], $mapping),
+                    $this->hydrator->getProperty($metadata->className, $object, $field),
+                ];
+            }
+        }
+
+        return $changes;
     }
 
     /**
@@ -554,6 +662,8 @@ final class UnitOfWork
 
             throw $e;
         }
+
+        $this->fire(Events::POST_LOAD, $metadata, $object);
 
         return $object;
     }
@@ -748,6 +858,7 @@ final class UnitOfWork
                             if ($referrerState['state'] === self::STATE_NEW) {
                                 $this->detach($referrerOid);
                             } else {
+                                $this->fire(Events::PRE_REMOVE, $referrer, $object);
                                 $this->states[$referrerOid]['state'] = self::STATE_REMOVED;
                                 $queue[] = $referrerOid;
                             }

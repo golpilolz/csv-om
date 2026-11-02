@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Om;
 
+use Golpilolz\CsvOm\Om\Event\EventManager;
 use Golpilolz\CsvOm\Om\Metadata\ClassMetadata;
 use Golpilolz\CsvOm\Om\Repository\RepositoryInterface;
 
@@ -55,6 +56,9 @@ interface ObjectManagerInterface
      * Whether the object is managed (loaded or persisted, and not scheduled for removal).
      */
     public function contains(object $object): bool;
+
+    /** Registry of the lifecycle listeners, see {@see Events}. */
+    public function getEventManager(): EventManager;
 
     public function getUnitOfWork(): UnitOfWork;
 }

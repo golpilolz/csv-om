@@ -48,6 +48,11 @@ final class MappingException extends \LogicException
         return new self(sprintf('Invalid #[CsvOm\\GeneratedValue] on "%s::$%s": %s.', $className, $field, $reason));
     }
 
+    public static function invalidLifecycleCallback(string $className, string $method, string $reason): self
+    {
+        return new self(sprintf('Invalid lifecycle callback "%s::%s()": %s.', $className, $method, $reason));
+    }
+
     public static function nullableId(string $className, string $field): self
     {
         return new self(sprintf('Identifier "%s::$%s" cannot be nullable.', $className, $field));

@@ -17,13 +17,13 @@ use Attribute;
  * UUID when several writers share a file.
  */
 #[Attribute(Attribute::TARGET_PROPERTY)]
-final class GeneratedValue
+final readonly class GeneratedValue
 {
     public const string INCREMENT = 'INCREMENT';
     public const string UUID = 'UUID';
 
     public function __construct(
-        public readonly string $strategy = self::INCREMENT,
+        public string $strategy = self::INCREMENT,
     ) {
     }
 }

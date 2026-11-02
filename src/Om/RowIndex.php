@@ -15,14 +15,14 @@ use Golpilolz\CsvOm\Storage\CsvStream;
  *
  * @internal
  */
-final class RowIndex implements \ArrayAccess, \Countable, \IteratorAggregate
+final readonly class RowIndex implements \ArrayAccess, \Countable, \IteratorAggregate
 {
     /**
      * @param array<int|string, int> $offsets canonical id => byte offset of the row, in file order
      */
     public function __construct(
-        private readonly array $offsets = [],
-        private readonly ?CsvStream $stream = null,
+        private array $offsets = [],
+        private ?CsvStream $stream = null,
     ) {
     }
 

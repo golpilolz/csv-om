@@ -13,6 +13,13 @@ services:
       $delimiter: ~
       $enclosure: ~
 
+  golpilolz_csv_om.event_manager:
+    class: Golpilolz\CsvOm\Om\Event\EventManager
+    arguments:
+      # Set by EventListenerPass.
+      $listeners: []
+      $locator: ~
+
   golpilolz_csv_om.object_manager:
     class: Golpilolz\CsvOm\Om\ObjectManager
     public: true
@@ -20,8 +27,12 @@ services:
       $storage: '@golpilolz_csv_om.storage'
       $metadataFactory: '@golpilolz_csv_om.metadata_factory'
       $converter: '@golpilolz_csv_om.type_converter'
+      $eventManager: '@golpilolz_csv_om.event_manager'
       # Set by RepositoryPass.
       $repositoryLocator: ~
+
+  Golpilolz\CsvOm\Om\Event\EventManager:
+    alias: golpilolz_csv_om.event_manager
 
   Golpilolz\CsvOm\Om\ObjectManagerInterface:
     alias: golpilolz_csv_om.object_manager

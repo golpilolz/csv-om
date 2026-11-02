@@ -9,6 +9,7 @@ use Golpilolz\CsvOm\Om\Collection\Collection;
 use Golpilolz\CsvOm\Om\Mapping\Association;
 use Golpilolz\CsvOm\Om\Mapping\Column;
 use Golpilolz\CsvOm\Om\Mapping\JoinColumn;
+use Golpilolz\CsvOm\Om\Mapping\LifecycleCallback;
 use Golpilolz\CsvOm\Om\Mapping\JoinTable;
 use Golpilolz\CsvOm\Om\Mapping\ManyToMany;
 use Golpilolz\CsvOm\Om\Mapping\ManyToOne;
@@ -166,6 +167,7 @@ final class MetadataFactory
             enclosure: $entity->enclosure,
             associationMappings: $associationMappings,
             idGenerator: $idGenerator,
+            lifecycleCallbacks: $this->lifecycleCallbacks($class),
         );
     }
 
@@ -261,6 +263,31 @@ final class MetadataFactory
         );
 
         return new AssociationMapping($field, $type, $target, $mappedBy, $inversedBy, in_array('persist', $attribute->getCascade(), true), $nullable, $joinMapping, $onDelete);
+    }
+
+    /**
+     * Methods marked with a lifecycle attribute (#[PrePersist], ...), including inherited and private ones.
+     *
+     * @param \ReflectionClass<object> $class
+     * @return array<string, list<string>> event name => method names
+     */
+    private function lifecycleCallbacks(\ReflectionClass $class): array
+    {
+        $callbacks = [];
+        foreach ($class->getMethods() as $method) {
+            foreach ($method->getAttributes(LifecycleCallback::class, \ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
+                $name = $method->getName();
+                if ($method->isStatic() || $method->isAbstract()) {
+                    throw MappingException::invalidLifecycleCallback($class->getName(), $name, 'it must be a concrete, non-static method');
+                }
+                if ($method->getNumberOfRequiredParameters() > 1 || $method->getNumberOfParameters() > 1) {
+                    throw MappingException::invalidLifecycleCallback($class->getName(), $name, 'it takes no argument or only the event arguments');
+                }
+                $callbacks[$attribute->getName()::EVENT][] = $name;
+            }
+        }
+
+        return $callbacks;
     }
 
     /**

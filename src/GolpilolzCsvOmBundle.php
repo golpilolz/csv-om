@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm;
 
+use Golpilolz\CsvOm\DependencyInjection\Compiler\EventListenerPass;
 use Golpilolz\CsvOm\DependencyInjection\Compiler\RepositoryPass;
 use Golpilolz\CsvOm\DependencyInjection\GolpilolzCsvOmExtension;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -17,6 +18,7 @@ final class GolpilolzCsvOmBundle extends Bundle
         parent::build($container);
 
         $container->addCompilerPass(new RepositoryPass());
+        $container->addCompilerPass(new EventListenerPass());
     }
 
     public function getContainerExtension(): ?ExtensionInterface

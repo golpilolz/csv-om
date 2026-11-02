@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Golpilolz\CsvOm\Om;
 
 use Golpilolz\CsvOm\Exception\MappingException;
+use Golpilolz\CsvOm\Om\Event\EventManager;
 use Golpilolz\CsvOm\Om\Hydrator\ObjectHydrator;
 use Golpilolz\CsvOm\Om\Metadata\ClassMetadata;
 use Golpilolz\CsvOm\Om\Metadata\MetadataFactory;
@@ -21,6 +22,7 @@ final class ObjectManager implements CSVObjectManagerInterface
 
     private readonly MetadataFactory $metadataFactory;
     private readonly UnitOfWork $unitOfWork;
+    private readonly EventManager $eventManager;
 
     /**
      * @param ContainerInterface|null $repositoryLocator repository services keyed by repository class
@@ -30,10 +32,12 @@ final class ObjectManager implements CSVObjectManagerInterface
         ?MetadataFactory $metadataFactory = null,
         ?TypeConverter $converter = null,
         private readonly ?ContainerInterface $repositoryLocator = null,
+        ?EventManager $eventManager = null,
     ) {
         $converter ??= new TypeConverter();
         $this->metadataFactory = $metadataFactory ?? new MetadataFactory();
-        $this->unitOfWork = new UnitOfWork($storage, new ObjectHydrator($converter), $converter, $this->metadataFactory);
+        $this->eventManager = $eventManager ?? new EventManager();
+        $this->unitOfWork = new UnitOfWork($storage, new ObjectHydrator($converter), $converter, $this->metadataFactory, $this->eventManager, $this);
     }
 
     public function find(string $className, mixed $id): ?object
@@ -76,6 +80,11 @@ final class ObjectManager implements CSVObjectManagerInterface
     public function contains(object $object): bool
     {
         return $this->unitOfWork->contains($object);
+    }
+
+    public function getEventManager(): EventManager
+    {
+        return $this->eventManager;
     }
 
     public function getUnitOfWork(): UnitOfWork

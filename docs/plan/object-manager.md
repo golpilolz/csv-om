@@ -221,6 +221,9 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
 
 ## Follow-up ideas
 
+- ✅ Lifecycle events: entity callbacks (`#[PrePersist]` ... `#[PostLoad]`) and listeners (`EventManager`, `#[AsListener]`,
+  tag `golpilolz_csv_om.event_listener`); `post*` events fire after all files of the flush are written. See `docs/events.md`.
+
 - ✅ Richer querying: `Om\Query\{Criteria, Expr}` + `matching()`; operators eq/neq/gt/gte/lt/lte/between/in/notIn/isNull/
   contains/startsWith/endsWith with andX/orX/not. `findBy()` arrays are compiled to the same expressions.
 
@@ -231,5 +234,5 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
 
 ## Out of scope (v1)
 
-Lazy proxies (associations themselves are step 9), lifecycle events, migrations/schema tooling, query language, multi-file transactions
+Lazy proxies (associations themselves are step 9), migrations/schema tooling, query language, multi-file transactions
 (flush writes files one by one; a failure mid-flush can leave earlier files written).

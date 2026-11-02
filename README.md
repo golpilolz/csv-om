@@ -47,6 +47,7 @@ return [
 - [Mapping](docs/mapping.md): `#[Entity]`, `#[Id]`, `#[Column]` and supported types.
 - [Usage](docs/usage.md): reading, writing and custom repositories.
 - [Associations](docs/associations.md): `ManyToOne`, `OneToMany`, `OneToOne`, `ManyToMany`.
+- [Lifecycle events](docs/events.md): entity callbacks and listeners (`prePersist`, `postLoad`, ...).
 - [File format and errors](docs/file-format.md): CSV rules and exception reference.
 - [Limitations](docs/limitations.md) and deprecations.
 - [Development](docs/development.md): tests, Rector, `make:csv-entity`.

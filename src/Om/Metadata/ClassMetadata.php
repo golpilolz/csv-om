@@ -26,6 +26,7 @@ final readonly class ClassMetadata
      * @param array<string, AssociationMapping> $associationMappings field name => mapping, in declaration order
      * @param string|null $delimiter null means "use the configured default"
      * @param string|null $enclosure null means "use the configured default"
+     * @param array<string, list<string>> $lifecycleCallbacks event name => entity methods to call, in declaration order
      * @param string|null $idGenerator a {@see GeneratedValue} strategy, null when ids are assigned by the application
      */
     public function __construct(
@@ -38,6 +39,7 @@ final readonly class ClassMetadata
         public ?string $enclosure = null,
         public array $associationMappings = [],
         public ?string $idGenerator = null,
+        public array $lifecycleCallbacks = [],
     ) {
         $columnMappings = $fieldMappings;
         foreach ($associationMappings as $association) {
