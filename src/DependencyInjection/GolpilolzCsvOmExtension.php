@@ -6,6 +6,7 @@ namespace Golpilolz\CsvOm\DependencyInjection;
 
 use Golpilolz\CsvOm\DependencyInjection\Compiler\RepositoryPass;
 use Golpilolz\CsvOm\Om\Repository\RepositoryInterface;
+use Symfony\Bundle\MakerBundle\Maker\AbstractMaker;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\Extension;
@@ -24,6 +25,15 @@ final class GolpilolzCsvOmExtension extends Extension
             ->setArgument('$directory', $config['directory'])
             ->setArgument('$delimiter', $config['delimiter'])
             ->setArgument('$enclosure', $config['enclosure']);
+
+        // make:csv-entity, only when symfony/maker-bundle is installed
+        if (class_exists(AbstractMaker::class)) {
+            $loader->load('maker.yaml');
+            $container->getDefinition('golpilolz_csv_om.maker.make_csv_entity')
+                ->setArgument('$directory', $config['directory'])
+                ->setArgument('$delimiter', $config['delimiter'])
+                ->setArgument('$enclosure', $config['enclosure']);
+        }
 
         $container->registerForAutoconfiguration(RepositoryInterface::class)
             ->addTag(RepositoryPass::TAG);

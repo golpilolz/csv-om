@@ -21,7 +21,12 @@
   },
   "require-dev": {
     "phpunit/phpunit": "^11.5",
-    "rector/rector": "^2.8"
+    "rector/rector": "^2.8",
+    "symfony/maker-bundle": "^1.60",
+    "symfony/string": "^7.4 | ^8"
+  },
+  "suggest": {
+    "symfony/maker-bundle": "Enables the make:csv-entity command"
   },
   "autoload": {
     "psr-4": {

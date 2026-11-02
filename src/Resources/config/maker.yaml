@@ -1,0 +1,9 @@
+services:
+  golpilolz_csv_om.maker.make_csv_entity:
+    class: Golpilolz\CsvOm\Maker\MakeCsvEntity
+    arguments:
+      # Set from the bundle configuration by the extension.
+      $directory: ~
+      $delimiter: ~
+      $enclosure: ~
+    tags: ['maker.command']

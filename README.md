@@ -307,3 +307,13 @@ docker run --rm -u $(id -u):$(id -g) -e COMPOSER_HOME=/tmp/c -v "$PWD":/app -w /
 ```bash
 docker run --rm -u $(id -u):$(id -g) -v "$PWD":/app -w /app composer:2 composer rector:fix
 ```
+
+## Generating entities (MakerBundle)
+
+With `symfony/maker-bundle` installed, `make:csv-entity` generates a mapped class and creates the CSV file with its header row when it doesn't exist:
+
+```bash
+bin/console make:csv-entity Book
+```
+
+The command asks, like `make:entity`, for the class name, the CSV file (default: snake_case class name + `.csv`), then loops on "New field name" (empty to stop), its type (`string`, `int`, `float`, `bool`, `datetime_immutable`) and whether it is nullable. An `id` int field is added when missing.
