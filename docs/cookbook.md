@@ -1,6 +1,6 @@
 # Cookbook
 
-Worked examples for common tasks. The [README](../README.md) is the reference; this page shows how the
+Worked examples for common tasks. The [documentation](../README.md#documentation) is the reference; this page shows how the
 pieces fit together. All examples use these entities and this data:
 
 ```php

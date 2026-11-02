@@ -28,7 +28,7 @@ Rector (`rector.php`, `composer rector` / `composer rector:fix`) is upgrade-only
 
 ## Architecture & status
 
-All v1 steps of **`docs/plan/object-manager.md`** are done; it records the design decisions (and follow-up ideas), read it before structural changes. Its "Current state" section describes the original Redis-derived starting point, not today's code. `README.md` is the user documentation: keep it in sync when behavior, options or exceptions change.
+All v1 steps of **`docs/plan/object-manager.md`** are done; it records the design decisions (and follow-up ideas), read it before structural changes. Its "Current state" section describes the original Redis-derived starting point, not today's code. `README.md` and the user documentation in `docs/` (configuration, mapping, usage, associations, file-format, limitations, development): keep them in sync when behavior, options or exceptions change.
 
 Current wiring:
 - `GolpilolzCsvOmBundle` → `GolpilolzCsvOmExtension` processes `Configuration` (`golpilolz_csv_om.directory`/`delimiter`/`enclosure`), loads `Resources/config/services.yaml` and injects the config into `golpilolz_csv_om.storage`. `golpilolz_csv_om.object_manager` (`Om\ObjectManager`, public) is aliased to `Om\ObjectManagerInterface`; `Om\CSVObjectManagerInterface` is a deprecated interface + deprecated alias kept for BC (`ObjectManager` implements it).

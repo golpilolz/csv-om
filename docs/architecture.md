@@ -85,10 +85,10 @@ go in the identity map keyed by canonical id, so later reads return the same ins
 ## Working on the bundle
 
 Tests live in `tests/` (fixtures in `tests/Fixtures`, `CsvDirectoryTrait` for temporary directories); see the
-README's *Development* section for the Docker command. PHPUnit fails on risky tests, warnings and any
+docs/development.md for the Docker command. PHPUnit fails on risky tests, warnings and any
 deprecation. CI runs PHP 8.3 to 8.5 against Symfony 7.4 and 8, a `--prefer-lowest` job and a Rector dry run.
 
-Keep the README in sync when behavior, options or exceptions change, and check that the harness app's
+Keep the README and docs/ in sync when behavior, options or exceptions change, and check that the harness app's
 `/csv` route still works (`App\Entity\Test`, `config/packages/golpilolz_csv_om.yaml`).
 
 ## Follow-up ideas
