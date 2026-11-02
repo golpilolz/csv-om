@@ -221,6 +221,9 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
 
 ## Follow-up ideas
 
+- ✅ Richer querying: `Om\Query\{Criteria, Expr}` + `matching()`; operators eq/neq/gt/gte/lt/lte/between/in/notIn/isNull/
+  contains/startsWith/endsWith with andX/orX/not. `findBy()` arrays are compiled to the same expressions.
+
 - ✅ Generated ids: `#[GeneratedValue]` (`INCREMENT` = max + 1, `UUID` = v4), generated at `persist()` time.
 
 - Optimistic concurrency: remember each file's mtime/size (or hash) at load and make `flush()` fail, under the

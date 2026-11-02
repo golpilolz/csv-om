@@ -18,6 +18,10 @@ use Golpilolz\CsvOm\Om\Metadata\AssociationMapping;
 use Golpilolz\CsvOm\Om\Metadata\ClassMetadata;
 use Golpilolz\CsvOm\Om\Metadata\FieldMapping;
 use Golpilolz\CsvOm\Om\Metadata\MetadataFactory;
+use Golpilolz\CsvOm\Om\Query\Comparison;
+use Golpilolz\CsvOm\Om\Query\Composite;
+use Golpilolz\CsvOm\Om\Query\Expression;
+use Golpilolz\CsvOm\Om\Query\Operator;
 use Golpilolz\CsvOm\Om\Type\TypeConverter;
 use Golpilolz\CsvOm\Storage\CsvStorageInterface;
 
@@ -88,11 +92,11 @@ final class UnitOfWork
     /**
      * @template T of object
      * @param ClassMetadata<T> $metadata
-     * @param array<string, mixed> $criteria
+     * @param array<string, mixed>|Expression $criteria
      * @param array<string, string> $orderBy
      * @return list<T>
      */
-    public function findBy(ClassMetadata $metadata, array $criteria, array $orderBy = [], ?int $limit = null, int $offset = 0): array
+    public function findBy(ClassMetadata $metadata, array|Expression $criteria, array $orderBy = [], ?int $limit = null, int $offset = 0): array
     {
         if ($limit !== null && $limit < 0) {
             throw QueryException::invalidLimit('limit', $limit);
@@ -119,9 +123,9 @@ final class UnitOfWork
 
     /**
      * @param ClassMetadata<object> $metadata
-     * @param array<string, mixed> $criteria
+     * @param array<string, mixed>|Expression $criteria
      */
-    public function count(ClassMetadata $metadata, array $criteria = []): int
+    public function count(ClassMetadata $metadata, array|Expression $criteria = []): int
     {
         return count($this->match($metadata, $criteria));
     }
@@ -971,53 +975,169 @@ final class UnitOfWork
     }
 
     /**
-     * @param array<string, mixed> $criteria
+     * @param ClassMetadata<object> $metadata
+     * @param array<string, mixed>|Expression $criteria field => value (a list means "one of"), or an expression
      * @return list<int|string> ids of the matching rows, in file order
      */
-    private function match(ClassMetadata $metadata, array $criteria): array
+    private function match(ClassMetadata $metadata, array|Expression $criteria): array
     {
         $table = $this->getTable($metadata);
-        if ($criteria === []) {
-            return $table->rows->ids();
-        }
-
-        // Normalize every criterion once: field => list of accepted canonical values.
-        $accepted = [];
-        foreach ($criteria as $field => $value) {
-            if (!$metadata->hasColumnMapping($field)) {
-                throw QueryException::unknownField($metadata->className, $field);
+        if (is_array($criteria)) {
+            if ($criteria === []) {
+                return $table->rows->ids();
             }
-            $mapping = $metadata->columnMappings[$field];
-            $association = $metadata->associationMappings[$field] ?? null;
-            $accepted[$field] = [];
-            foreach (is_array($value) ? $value : [$value] as $item) {
-                if ($association !== null && is_object($item) && !$item instanceof \BackedEnum) {
-                    $item = $this->associationCriterion($metadata, $association, $item);
-                }
-                try {
-                    $accepted[$field][] = $this->converter->canonicalize($item, $mapping);
-                } catch (ConversionException $e) {
-                    throw QueryException::invalidCriterion($metadata->className, $field, $e);
-                }
-            }
+            $criteria = new Composite(Composite::AND, array_values(array_map(
+                static fn (string $field, mixed $value): Comparison => new Comparison($field, is_array($value) ? Operator::IN : Operator::EQ, $value),
+                array_keys($criteria),
+                $criteria,
+            )));
         }
 
-        $columns = [];
-        foreach (array_keys($accepted) as $field) {
-            $columns[$field] = $this->canonicalColumn($metadata, $table, $field);
-        }
-
+        $predicate = $this->compile($metadata, $table, $criteria);
         $matching = [];
         foreach ($table->rows->ids() as $id) {
-            foreach ($accepted as $field => $values) {
-                if (!in_array($columns[$field][$id], $values, true)) {
-                    continue 2;
-                }
+            if ($predicate((string) $id)) {
+                $matching[] = $id;
             }
-            $matching[] = $id;
         }
 
         return $matching;
+    }
+
+    /**
+     * Turns an expression into a predicate on row ids. Operands are normalized once here, columns are read once.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @return \Closure(string): bool
+     */
+    private function compile(ClassMetadata $metadata, Table $table, Expression $expression): \Closure
+    {
+        if ($expression instanceof Composite) {
+            $parts = array_map(fn (Expression $e): \Closure => $this->compile($metadata, $table, $e), $expression->expressions);
+
+            return match ($expression->type) {
+                Composite::AND => static function (string $id) use ($parts): bool {
+                    foreach ($parts as $part) {
+                        if (!$part($id)) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                },
+                Composite::OR => static function (string $id) use ($parts): bool {
+                    foreach ($parts as $part) {
+                        if ($part($id)) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                },
+                Composite::NOT => count($parts) === 1
+                    ? static fn (string $id): bool => !$parts[0]($id)
+                    : throw QueryException::invalidExpression('NOT takes exactly one expression'),
+                default => throw QueryException::invalidExpression(sprintf('unknown composite type "%s"', $expression->type)),
+            };
+        }
+
+        if (!$expression instanceof Comparison) {
+            throw QueryException::invalidExpression(sprintf('unsupported expression "%s"', get_debug_type($expression)));
+        }
+
+        $field = $expression->field;
+        if (!$metadata->hasColumnMapping($field)) {
+            throw QueryException::unknownField($metadata->className, $field);
+        }
+        $mapping = $metadata->columnMappings[$field];
+        $association = $metadata->associationMappings[$field] ?? null;
+        $operator = $expression->operator;
+
+        switch ($operator) {
+            case Operator::EQ:
+            case Operator::NEQ:
+            case Operator::IN:
+            case Operator::NIN:
+                $accepted = [];
+                foreach (is_array($expression->value) ? $expression->value : [$expression->value] as $item) {
+                    if ($association !== null && is_object($item) && !$item instanceof \BackedEnum) {
+                        $item = $this->associationCriterion($metadata, $association, $item);
+                    }
+                    try {
+                        $accepted[] = $this->converter->canonicalize($item, $mapping);
+                    } catch (ConversionException $e) {
+                        throw QueryException::invalidCriterion($metadata->className, $field, $e);
+                    }
+                }
+                $column = $this->canonicalColumn($metadata, $table, $field);
+                $negate = $operator === Operator::NEQ || $operator === Operator::NIN;
+
+                return static fn (string $id): bool => in_array($column[$id], $accepted, true) !== $negate;
+
+            case Operator::GT:
+            case Operator::GTE:
+            case Operator::LT:
+            case Operator::LTE:
+                if ($association !== null) {
+                    throw QueryException::invalidOperator($metadata->className, $field, $operator->value, 'it is not applicable to an association');
+                }
+                try {
+                    $canonical = $this->converter->canonicalize($expression->value, $mapping);
+                    $operand = $canonical === null ? null : $this->converter->toPhp($canonical, $mapping);
+                } catch (ConversionException $e) {
+                    throw QueryException::invalidCriterion($metadata->className, $field, $e);
+                }
+                if ($operand === null) {
+                    throw QueryException::invalidOperator($metadata->className, $field, $operator->value, 'the operand cannot be null');
+                }
+                $column = $this->valueColumn($metadata, $table, $field);
+
+                return static function (string $id) use ($column, $operand, $operator): bool {
+                    $cell = $column[$id];
+                    if ($cell === null) {
+                        return false;
+                    }
+                    $cmp = self::compareValues($cell, $operand);
+
+                    return match ($operator) {
+                        Operator::GT => $cmp > 0,
+                        Operator::GTE => $cmp >= 0,
+                        Operator::LT => $cmp < 0,
+                        default => $cmp <= 0,
+                    };
+                };
+
+            default: // CONTAINS, STARTS_WITH, ENDS_WITH
+                if ($association !== null) {
+                    throw QueryException::invalidOperator($metadata->className, $field, $operator->value, 'it is not applicable to an association');
+                }
+                if (!is_string($expression->value)) {
+                    throw QueryException::invalidOperator($metadata->className, $field, $operator->value, 'the operand must be a string');
+                }
+                $text = $expression->value;
+                $column = $this->canonicalColumn($metadata, $table, $field);
+
+                return static function (string $id) use ($column, $text, $operator): bool {
+                    $cell = $column[$id];
+                    if ($cell === null) {
+                        return false;
+                    }
+
+                    return match ($operator) {
+                        Operator::CONTAINS => str_contains($cell, $text),
+                        Operator::STARTS_WITH => str_starts_with($cell, $text),
+                        default => str_ends_with($cell, $text),
+                    };
+                };
+        }
+    }
+
+    /**
+     * Order of two non-null PHP values of a field; enums compare by backing value.
+     */
+    private static function compareValues(mixed $x, mixed $y): int
+    {
+        return $x instanceof \BackedEnum ? $x->value <=> $y->value : $x <=> $y;
     }
 
     /**
@@ -1068,8 +1188,7 @@ final class UnitOfWork
                 $y = $values[$field][$b];
                 $cmp = match (true) {
                     $x === null || $y === null => ($x !== null) <=> ($y !== null),
-                    $x instanceof \BackedEnum => $x->value <=> $y->value,
-                    default => $x <=> $y,
+                    default => self::compareValues($x, $y),
                 };
                 if ($cmp !== 0) {
                     return $cmp * $sign;

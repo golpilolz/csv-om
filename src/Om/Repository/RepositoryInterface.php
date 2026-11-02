@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Om\Repository;
 
+use Golpilolz\CsvOm\Om\Query\Criteria;
+
 /**
  * @template T of object
  */
@@ -33,6 +35,13 @@ interface RepositoryInterface
      * @return T|null
      */
     public function findOneBy(array $criteria, ?array $orderBy = null): ?object;
+
+    /**
+     * Objects matching a {@see Criteria}: filter expression, order and window.
+     *
+     * @return list<T>
+     */
+    public function matching(Criteria $criteria): array;
 
     /**
      * @param array<string, mixed> $criteria

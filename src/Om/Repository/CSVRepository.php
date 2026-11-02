@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Golpilolz\CsvOm\Om\Repository;
 
 use Golpilolz\CsvOm\Om\ObjectManagerInterface;
+use Golpilolz\CsvOm\Om\Query\Criteria;
+use Golpilolz\CsvOm\Om\Query\Expression;
 
 /**
  * Default repository. Extend it to add custom finders. To make it an autowirable service (like Doctrine's
@@ -99,7 +101,21 @@ class CSVRepository implements RepositoryInterface
             : $this->findBy($criteria, $arguments[1] ?? null, $arguments[2] ?? null, $arguments[3] ?? null);
     }
 
-    public function count(array $criteria = []): int
+    public function matching(Criteria $criteria): array
+    {
+        return $this->objectManager->getUnitOfWork()->findBy(
+            $this->objectManager->getClassMetadata($this->className),
+            $criteria->getWhereExpression() ?? [],
+            $criteria->getOrderings(),
+            $criteria->getMaxResults(),
+            $criteria->getFirstResult(),
+        );
+    }
+
+    /**
+     * @param array<string, mixed>|Expression $criteria
+     */
+    public function count(array|Expression $criteria = []): int
     {
         return $this->objectManager->getUnitOfWork()->count(
             $this->objectManager->getClassMetadata($this->className),

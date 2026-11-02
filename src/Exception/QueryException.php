@@ -30,4 +30,14 @@ final class QueryException extends \InvalidArgumentException
     {
         return new self(sprintf('Invalid value for association "%s" of entity "%s": %s.', $field, $className, $reason));
     }
+
+    public static function invalidOperator(string $className, string $field, string $operator, string $reason): self
+    {
+        return new self(sprintf('Cannot apply "%s" to field "%s" of entity "%s": %s.', $operator, $field, $className, $reason));
+    }
+
+    public static function invalidExpression(string $reason): self
+    {
+        return new self(sprintf('Invalid expression: %s.', $reason));
+    }
 }

@@ -45,6 +45,45 @@ $repository->findOneByTitle('Dune');
 - **Queries read the data as loaded from the file**, the way Doctrine queries the database: a change to an
   object that isn't flushed yet doesn't affect which objects match or their order.
 
+## Criteria and operators
+
+`findBy()` only does equality. For anything else, build a `Criteria` from `Expr` expressions and run it with
+`matching()`:
+
+```php
+use Golpilolz\CsvOm\Om\Query\Criteria;
+use Golpilolz\CsvOm\Om\Query\Expr;
+
+$books = $repository->matching(
+    Criteria::create()
+        ->where(Expr::gte('price', 10))
+        ->andWhere(Expr::orX(
+            Expr::eq('status', BookStatus::Published),
+            Expr::startsWith('title', 'The '),
+        ))
+        ->orderBy(['price' => 'DESC'])
+        ->setFirstResult(20)
+        ->setMaxResults(10),
+);
+
+$repository->count(Expr::between('publishedAt', new \DateTimeImmutable('1950-01-01'), new \DateTimeImmutable('1959-12-31')));
+```
+
+| Expression | Matches |
+|---|---|
+| `eq`, `neq` | equal / not equal. `neq` also matches empty cells. |
+| `gt`, `gte`, `lt`, `lte`, `between` | typed comparison (numbers numerically, dates chronologically, enums by backing value). Never matches an empty cell. `between` is inclusive. |
+| `in`, `notIn` | one of / none of a list |
+| `isNull`, `isNotNull` | empty / non-empty cell |
+| `contains`, `startsWith`, `endsWith` | case-sensitive text match on the cell. Never matches an empty cell. |
+| `andX`, `orX`, `not` | combine expressions (an empty `andX` matches everything, an empty `orX` nothing) |
+
+Operands are typed like `findBy()` values (`'7'` for an int field, an enum case for an enum field, an object or
+id for an owning to-one association). Ordering and text operators don't apply to associations, and ordering
+operators reject a `null` operand. Invalid fields, operands and operators throw a `QueryException`. `Criteria`
+objects are mutable and reusable; like `findBy()`, they read the data as loaded from the file. `count()` also
+accepts an expression.
+
 ## Writing
 
 ```php

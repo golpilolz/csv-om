@@ -18,7 +18,7 @@
 - **Associations** are resolved through the identity map without proxies: to-one relations load eagerly, to-many
   collections on first access. See [Associations](associations.md) for the limits.
 - **Not supported:** lazy proxies, lifecycle events and listeners, composite ids,
-  query language or query builder, schema tooling.
+  query language, joins and paths such as `author.name`, aggregates (`Criteria` and `Expr` cover filtering, ordering and paging), schema tooling.
 
 ## Deprecations
 
