@@ -331,6 +331,11 @@ final class FlushTest extends TestCase
                 return $this->inner->open($file, $delimiter, $enclosure);
             }
 
+            public function listFiles(string $directory, bool $recursive = true): array
+            {
+                return $this->inner->listFiles($directory, $recursive);
+            }
+
             public function fingerprint(string $file): string
             {
                 return $this->inner->fingerprint($file);

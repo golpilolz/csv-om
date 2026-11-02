@@ -18,6 +18,7 @@ use Golpilolz\CsvOm\Om\Mapping\OneToOne;
 use Golpilolz\CsvOm\Om\Mapping\Entity;
 use Golpilolz\CsvOm\Om\Mapping\GeneratedValue;
 use Golpilolz\CsvOm\Om\Mapping\Id;
+use Golpilolz\CsvOm\Om\Mapping\SourceFile;
 use Golpilolz\CsvOm\Om\Mapping\Types;
 use Golpilolz\CsvOm\Om\Repository\CSVRepository;
 use Golpilolz\CsvOm\Om\Repository\RepositoryInterface;
@@ -72,8 +73,21 @@ final class MetadataFactory
         $fieldMappings = [];
         $associationMappings = [];
         $idFields = [];
-        $file = $entity->file ?? self::defaultFileName($class->getShortName());
+        if ($entity->directory !== null && $entity->file !== null) {
+            throw MappingException::invalidDirectoryOptions($className, '"file" and "directory" cannot be used together');
+        }
+        if ($entity->directory === null && ($entity->recursive !== null || $entity->newFile !== null)) {
+            throw MappingException::invalidDirectoryOptions($className, '"recursive" and "newFile" need a "directory"');
+        }
+        $file = $entity->directory !== null ? rtrim(str_replace('\\', '/', $entity->directory), '/') : ($entity->file ?? self::defaultFileName($class->getShortName()));
+        $sourceFileField = null;
         foreach ($class->getProperties() as $property) {
+            if ($property->getAttributes(SourceFile::class) !== []) {
+                $sourceFileField = $this->sourceFileField($className, $property, $entity->directory !== null, $sourceFileField);
+
+                continue;
+            }
+
             $associationAttributes = $property->getAttributes(Association::class, \ReflectionAttribute::IS_INSTANCEOF);
             if ($associationAttributes !== []) {
                 if (count($associationAttributes) > 1) {
@@ -157,7 +171,7 @@ final class MetadataFactory
             throw MappingException::invalidFile($className, $file);
         }
 
-        return new ClassMetadata(
+        $metadata = new ClassMetadata(
             className: $className,
             file: $file,
             repositoryClass: $repositoryClass,
@@ -168,7 +182,16 @@ final class MetadataFactory
             associationMappings: $associationMappings,
             idGenerator: $idGenerator,
             lifecycleCallbacks: $this->lifecycleCallbacks($class),
+            directory: $entity->directory !== null ? $file : null,
+            recursive: $entity->recursive ?? true,
+            newFile: $entity->newFile,
+            sourceFileField: $sourceFileField,
         );
+        if ($entity->newFile !== null && ($reason = $metadata->invalidSourcePath($entity->newFile)) !== null) {
+            throw MappingException::invalidDirectoryOptions($className, sprintf('invalid "newFile" "%s": %s', $entity->newFile, $reason));
+        }
+
+        return $metadata;
     }
 
     private function buildAssociationMapping(string $className, string $ownerFile, \ReflectionProperty $property, Association $attribute): AssociationMapping
@@ -263,6 +286,30 @@ final class MetadataFactory
         );
 
         return new AssociationMapping($field, $type, $target, $mappedBy, $inversedBy, in_array('persist', $attribute->getCascade(), true), $nullable, $joinMapping, $onDelete);
+    }
+
+    /**
+     * Validates a #[SourceFile] property and returns its name.
+     */
+    private function sourceFileField(string $className, \ReflectionProperty $property, bool $directory, ?string $already): string
+    {
+        $field = $property->getName();
+        $type = $property->getType();
+        if (!$directory) {
+            throw MappingException::invalidSourceFile($className, $field, 'only an entity mapped to a "directory" has source files');
+        }
+        if ($already !== null) {
+            throw MappingException::invalidSourceFile($className, $field, sprintf('"%s" is already the source file property', $already));
+        }
+        if ($property->isStatic() || $property->getAttributes(Id::class) !== [] || $property->getAttributes(Column::class) !== []
+            || $property->getAttributes(Association::class, \ReflectionAttribute::IS_INSTANCEOF) !== []) {
+            throw MappingException::invalidSourceFile($className, $field, 'it must be a plain, non-static property, not a column or an association');
+        }
+        if ($type !== null && (!$type instanceof \ReflectionNamedType || $type->getName() !== 'string')) {
+            throw MappingException::invalidSourceFile($className, $field, 'it must be typed ?string');
+        }
+
+        return $field;
     }
 
     /**

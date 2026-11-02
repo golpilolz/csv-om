@@ -21,18 +21,44 @@ final class Table
     /** @var array<string, array<string, mixed>> field => (row id => PHP value), filled lazily */
     public array $valueColumns = [];
 
+    /** @var list<string> header of the first file (the only one for a file entity) */
+    public readonly array $header;
+
+    /** @var list<string> unmapped columns of the first file (the only one for a file entity) */
+    public readonly array $extraColumns;
+
     /**
-     * @param list<string> $header header of the file (mapped columns first when the file did not exist)
-     * @param list<string> $extraColumns columns present in the file but not mapped; kept so they can be written back
-     * @param string $fingerprint version of the file when it was loaded (empty: it did not exist), see {@see \Golpilolz\CsvOm\Storage\Fingerprint}
+     * @param list<TableFile> $files the files read, in the order their rows come: one for a file entity (even
+     *        when it does not exist yet), the matching files for a directory entity
      * @param RowIndex $rows raw cells (mapped and extra columns) as read, by canonical id, in file order; rows are
-     *        read from the file on demand
+     *        read from the files on demand
+     * @param string $listing version of the list of files of a directory entity, empty for a file entity
      */
     public function __construct(
-        public readonly array $header,
-        public readonly array $extraColumns,
+        public readonly array $files,
         public readonly RowIndex $rows,
-        public readonly string $fingerprint = '',
+        public readonly string $listing = '',
     ) {
+        $this->header = $files[0]->header ?? [];
+        $this->extraColumns = $files[0]->extraColumns ?? [];
+    }
+
+    public function file(string $path): ?TableFile
+    {
+        foreach ($this->files as $file) {
+            if ($file->path === $path) {
+                return $file;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The file a loaded row comes from.
+     */
+    public function fileOfRow(int|string $id): TableFile
+    {
+        return $this->files[$this->rows->fileIndex($id)];
     }
 }

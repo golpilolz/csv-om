@@ -27,6 +27,9 @@ final readonly class ClassMetadata
      * @param string|null $delimiter null means "use the configured default"
      * @param string|null $enclosure null means "use the configured default"
      * @param array<string, list<string>> $lifecycleCallbacks event name => entity methods to call, in declaration order
+     * @param string|null $directory directory of the entity files, null for an entity mapped to one file ({@see self::$file}; for a directory entity it holds the directory too)
+     * @param string|null $newFile file, relative to the directory, for new objects without a source file
+     * @param string|null $sourceFileField property holding the relative path of the file of a row
      * @param string|null $idGenerator a {@see GeneratedValue} strategy, null when ids are assigned by the application
      */
     public function __construct(
@@ -40,6 +43,10 @@ final readonly class ClassMetadata
         public array $associationMappings = [],
         public ?string $idGenerator = null,
         public array $lifecycleCallbacks = [],
+        public ?string $directory = null,
+        public bool $recursive = true,
+        public ?string $newFile = null,
+        public ?string $sourceFileField = null,
     ) {
         $columnMappings = $fieldMappings;
         foreach ($associationMappings as $association) {
@@ -54,6 +61,40 @@ final readonly class ClassMetadata
             $columnToField[$mapping->columnName] = $mapping->fieldName;
         }
         $this->columnToField = $columnToField;
+    }
+
+    /**
+     * Why a path, relative to the entity directory, cannot hold rows of the entity; null when it can: a
+     * relative `.csv` path without "..", without hidden parts (they are not listed) and, when the directory
+     * is not read recursively, without subdirectory.
+     */
+    public function invalidSourcePath(string $path): ?string
+    {
+        $parts = explode('/', str_replace('\\', '/', $path));
+        if (str_contains($path, '\\')) {
+            return 'use "/" as the path separator';
+        }
+        if ($path === '' || str_starts_with($path, '/') || in_array('..', $parts, true) || in_array('', $parts, true)) {
+            return 'it must be a relative path without ".."';
+        }
+        foreach ($parts as $part) {
+            if (str_starts_with($part, '.')) {
+                return 'hidden files and directories are not read';
+            }
+        }
+        if (strcasecmp(substr($path, -4), '.csv') !== 0) {
+            return 'it must end with ".csv"';
+        }
+        if (!$this->recursive && count($parts) > 1) {
+            return 'the directory is not read recursively';
+        }
+
+        return null;
+    }
+
+    public function isDirectory(): bool
+    {
+        return $this->directory !== null;
     }
 
     public function getIdMapping(): FieldMapping

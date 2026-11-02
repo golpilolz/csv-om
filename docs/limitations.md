@@ -20,6 +20,8 @@
 - **`flush()` is not a transaction across files.** All changes are validated before any file is written, so a
   bad value writes nothing. If a write fails on disk, files already written keep their changes and the rest stay
   pending for the next `flush()`.
+- **Directory entities** keep one open file handle per file whose rows were read, so a directory of thousands
+  of files can hit the process limit on open files. Rows cannot be moved between the files of a directory.
 - **Associations** are resolved through the identity map without proxies: to-one relations load eagerly, to-many
   collections on first access. See [Associations](associations.md) for the limits.
 - **Not supported:** lazy proxies, composite ids,

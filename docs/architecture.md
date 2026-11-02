@@ -35,7 +35,7 @@ Controller / service
 | `Resources/config/services.yaml` | Service definitions; `golpilolz_csv_om.object_manager` is public and aliased to `ObjectManagerInterface` |
 | `Om/Mapping/` | `Entity`, `Id`, `Column`, `Types`: attributes holding scalars only |
 | `Om/Metadata/` | `MetadataFactory` builds cached `ClassMetadata` / `FieldMapping`, inferring type and nullability from PHP property types; throws `MappingException` |
-| `Om/ObjectManager`, `Om/UnitOfWork`, `Om/Table` | Public API, state tracking, loaded-file snapshot |
+| `Om/ObjectManager`, `Om/UnitOfWork`, `Om/Table` (`Om/TableFile` per file, `Om/RowIndex` across them) | Public API, state tracking, loaded-file snapshot |
 | `Om/Type/TypeConverter` | Strict cell string ↔ PHP value; `canonicalize()` |
 | `Om/Hydrator/ObjectHydrator` | Row ↔ object without calling the constructor |
 | `Om/Repository/` | `RepositoryInterface`, `CSVRepository` |

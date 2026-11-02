@@ -162,6 +162,10 @@ final class UnitOfWork
         // Before the id is read, so the event can set it (or a date, a slug, ...).
         $this->fire(Events::PRE_PERSIST, $metadata, $object);
 
+        if ($metadata->isDirectory()) {
+            $this->targetFile($metadata, $object); // validates the file now, and fills #[SourceFile]
+        }
+
         $id = $this->hydrator->extractId($metadata, $object);
         if ($id === null && $metadata->idGenerator !== null) {
             $id = $this->generateId($metadata);
@@ -279,8 +283,17 @@ final class UnitOfWork
         $joinPlans = $this->computeJoinChanges();
 
         // Nothing is written if any file changed behind our back (the storage checks again under the lock).
+        $writes = [];
         foreach ($plans as $className => $plan) {
-            $this->assertUnchanged($this->metadata[$className]->file, $this->getTable($this->metadata[$className])->fingerprint);
+            $metadata = $this->metadata[$className];
+            $table = $this->getTable($metadata);
+            $writes[$className] = $this->groupByFile($table, $plan);
+            foreach (array_keys($writes[$className]) as $path) {
+                $this->assertUnchanged($path, $table->file($path)?->fingerprint ?? Fingerprint::MISSING);
+            }
+            if ($metadata->isDirectory() && $this->listingKey($this->storage->listFiles($metadata->file, $metadata->recursive)) !== $table->listing) {
+                throw ConcurrentModificationException::forFile($metadata->file);
+            }
         }
         foreach ($joinPlans as $key => $plan) {
             $this->assertUnchanged($plan['file'], $this->joinTables[$key]['fingerprint']);
@@ -290,36 +303,44 @@ final class UnitOfWork
             $metadata = $this->metadata[$className];
             $table = $this->getTable($metadata);
 
-            $this->storage->write(
-                $metadata->file,
-                $table->header,
-                (static function () use ($plan, $table): \Generator {
-                    $blank = array_fill_keys($table->header, '');
-                    // Rows are streamed from the old file; only the changed ones are held in memory.
-                    // Cells in header order; the storage writes them by column name.
-                    foreach ($table->rows as $id => $row) {
-                        if (!isset($plan['removedIds'][$id])) {
-                            yield array_replace($blank, $plan['changes'][$id] ?? $row);
-                        }
-                    }
-                    foreach ($plan['changes'] as $id => $row) {
-                        if (!isset($table->rows[$id])) {
-                            yield array_replace($blank, $row);
-                        }
-                    }
-                })(),
-                $metadata->delimiter,
-                $metadata->enclosure,
-                $table->fingerprint,
-            );
+            foreach ($writes[$className] as $path => $changes) {
+                $tableFile = $table->file($path);
+                $header = $tableFile->header ?? $metadata->getColumnNames();
+                $fileIndex = $tableFile === null ? null : array_search($tableFile, $table->files, true);
 
-            // The file changed: forget its index and loaded columns, the next read loads it again.
-            unset($this->tables[$className]);
-            foreach ($plan['inserted'] as $oid) {
-                $this->states[$oid]['state'] = self::STATE_MANAGED;
-            }
-            foreach ($plan['removed'] as $oid) {
-                $this->detach($oid);
+                $this->storage->write(
+                    $path,
+                    $header,
+                    (static function () use ($changes, $table, $header, $fileIndex): \Generator {
+                        $blank = array_fill_keys($header, '');
+                        // Rows are streamed from the old file; only the changed ones are held in memory.
+                        // Cells in header order; the storage writes them by column name.
+                        if ($fileIndex !== null) {
+                            foreach ($table->rows->rowsOfFile($fileIndex) as $id => $row) {
+                                if (!isset($changes['removedIds'][$id])) {
+                                    yield array_replace($blank, $changes['changes'][$id] ?? $row);
+                                }
+                            }
+                        }
+                        foreach ($changes['changes'] as $id => $row) {
+                            if (!isset($table->rows[$id])) {
+                                yield array_replace($blank, $row);
+                            }
+                        }
+                    })(),
+                    $metadata->delimiter,
+                    $metadata->enclosure,
+                    $tableFile->fingerprint ?? Fingerprint::MISSING,
+                );
+
+                // The file changed: forget the loaded index and columns, the next read loads them again.
+                unset($this->tables[$className]);
+                foreach ($changes['inserted'] as $oid) {
+                    $this->states[$oid]['state'] = self::STATE_MANAGED;
+                }
+                foreach ($changes['removed'] as $oid) {
+                    $this->detach($oid);
+                }
             }
         }
 
@@ -348,6 +369,79 @@ final class UnitOfWork
             }
         }
         $this->dispatchFlush(Events::POST_FLUSH);
+    }
+
+    /**
+     * Splits the plan of an entity by the file each change belongs to.
+     *
+     * @param array{changes: array<string, array<string, string>>, targets: array<string, string>, removedIds: array<string, true>, inserted: array<int, string>, removed: list<int>, events: list<array{0: string, 1: object}>} $plan
+     * @return array<string, array{changes: array<string, array<string, string>>, removedIds: array<string, true>, inserted: list<int>, removed: list<int>}> path => changes
+     */
+    private function groupByFile(Table $table, array $plan): array
+    {
+        $files = [];
+        foreach ($plan['changes'] as $id => $row) {
+            $files[$plan['targets'][$id]]['changes'][$id] = $row;
+        }
+        foreach ($plan['inserted'] as $oid => $path) {
+            $files[$path]['inserted'][] = $oid;
+        }
+        foreach ($plan['removed'] as $oid) {
+            $id = $this->states[$oid]['id'];
+            $path = $table->fileOfRow($id)->path;
+            $files[$path]['removedIds'][$id] = true;
+            $files[$path]['removed'][] = $oid;
+        }
+
+        $grouped = [];
+        foreach ($files as $path => $file) {
+            $grouped[$path] = $file + ['changes' => [], 'removedIds' => [], 'inserted' => [], 'removed' => []];
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @param list<string> $paths
+     */
+    private function listingKey(array $paths): string
+    {
+        return md5(implode("\n", $paths));
+    }
+
+    /**
+     * Path (relative to the configured directory) of the file a new object is added to, checked: the
+     * #[SourceFile] value or else the entity's newFile. Writes the value back to the property.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function targetFile(ClassMetadata $metadata, object $object): string
+    {
+        if (!$metadata->isDirectory()) {
+            return $metadata->file;
+        }
+
+        $field = (string) $metadata->sourceFileField;
+        $value = $metadata->sourceFileField === null ? null : $this->hydrator->getProperty($metadata->className, $object, $field);
+        $relative = is_string($value) && $value !== '' ? $value : ($metadata->newFile ?? throw PersistenceException::noTargetFile($metadata->className));
+        if (($reason = $metadata->invalidSourcePath($relative)) !== null) {
+            throw PersistenceException::invalidTargetFile($metadata->className, $relative, $reason);
+        }
+        if ($metadata->sourceFileField !== null && $value !== $relative) {
+            $this->hydrator->setProperty($metadata->className, $object, $field, $relative);
+        }
+
+        return $metadata->file . '/' . $relative;
+    }
+
+    /**
+     * Path of a file of a directory entity relative to the entity directory.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function relativePath(ClassMetadata $metadata, string $path): string
+    {
+        return substr($path, strlen($metadata->file) + 1);
     }
 
     private function assertUnchanged(string $file, string $loadedFingerprint): void
@@ -437,12 +531,13 @@ final class UnitOfWork
     /**
      * @param ClassMetadata<object> $metadata
      * @param array<string, object> $objects canonical id => object
-     * @return array{changes: array<string, array<string, string>>, removedIds: array<string, true>, inserted: list<int>, removed: list<int>, events: list<array{0: string, 1: object}>}|null
+     * @return array{changes: array<string, array<string, string>>, targets: array<string, string>, removedIds: array<string, true>, inserted: array<int, string>, removed: list<int>, events: list<array{0: string, 1: object}>}|null
      */
     private function computeChanges(ClassMetadata $metadata, array $objects): ?array
     {
         $table = $this->getTable($metadata);
         $changes = [];
+        $targets = [];
         $removedIds = [];
         $inserted = [];
         $removed = [];
@@ -469,10 +564,13 @@ final class UnitOfWork
             }
 
             if ($state === self::STATE_NEW) {
-                $raw = array_fill_keys($table->extraColumns, '');
-                $inserted[] = $oid;
+                $path = $this->targetFile($metadata, $object);
+                $raw = array_fill_keys($table->file($path)?->extraColumns ?? [], '');
+                $inserted[$oid] = $path;
                 $events[] = [Events::POST_PERSIST, $object];
             } else {
+                $path = $table->fileOfRow($id)->path;
+                $this->assertSourceFileUnchanged($metadata, $object, $id, $path);
                 $original = $table->rows[$id];
                 if ($this->sameValues($metadata, $cells, $original)) {
                     continue;
@@ -496,10 +594,26 @@ final class UnitOfWork
                 $raw[$column] = $value ?? '';
             }
             $changes[$id] = $raw;
+            $targets[$id] = $path;
             $changed = true;
         }
 
-        return $changed ? ['changes' => $changes, 'removedIds' => $removedIds, 'inserted' => $inserted, 'removed' => $removed, 'events' => $events] : null;
+        return $changed ? ['changes' => $changes, 'targets' => $targets, 'removedIds' => $removedIds, 'inserted' => $inserted, 'removed' => $removed, 'events' => $events] : null;
+    }
+
+    /**
+     * @param ClassMetadata<object> $metadata
+     */
+    private function assertSourceFileUnchanged(ClassMetadata $metadata, object $object, string $id, string $path): void
+    {
+        if ($metadata->sourceFileField === null) {
+            return;
+        }
+        $value = $this->hydrator->getProperty($metadata->className, $object, $metadata->sourceFileField);
+        $relative = $this->relativePath($metadata, $path);
+        if (is_string($value) && $value !== '' && $value !== $relative) {
+            throw PersistenceException::sourceFileChanged($metadata->className, $id, $relative, $value);
+        }
     }
 
     /**
@@ -550,47 +664,79 @@ final class UnitOfWork
 
     private function load(ClassMetadata $metadata): Table
     {
-        if (!$this->storage->exists($metadata->file)) {
-            return new Table($metadata->getColumnNames(), [], new RowIndex(), Fingerprint::MISSING);
+        if ($metadata->isDirectory()) {
+            $paths = $this->storage->listFiles($metadata->file, $metadata->recursive);
+        } elseif ($this->storage->exists($metadata->file)) {
+            $paths = [$metadata->file];
+        } else {
+            return new Table([new TableFile($metadata->file, $metadata->getColumnNames(), [], Fingerprint::MISSING)], new RowIndex());
         }
 
-        $stream = $this->storage->open($metadata->file, $metadata->delimiter, $metadata->enclosure);
-
-        $missing = array_diff($metadata->getColumnNames(), $stream->header);
-        if ($missing !== []) {
-            throw new StorageException(sprintf(
-                'CSV file "%s" of entity "%s" is missing mapped columns: %s.',
-                $metadata->file,
-                $metadata->className,
-                implode(', ', $missing),
-            ));
-        }
-
+        $files = [];
+        $streams = [];
+        $fileIds = [];
         $offsets = [];
-        $index = 0;
-        foreach ($stream->records() as $offset => $raw) {
-            // Every row is converted once, now, so invalid data is reported on first use; only the byte
-            // offset of the row is kept, which keeps the memory of big files low.
-            $id = $this->validateRow($metadata, $raw);
-            if (isset($offsets[$id])) {
+        foreach ($paths as $path) {
+            $stream = $this->storage->open($path, $metadata->delimiter, $metadata->enclosure);
+
+            $missing = array_diff($metadata->getColumnNames(), $stream->header);
+            if ($missing !== []) {
                 throw new StorageException(sprintf(
-                    'CSV file "%s" of entity "%s" has duplicate id "%s" (data row %d).',
-                    $metadata->file,
+                    'CSV file "%s" of entity "%s" is missing mapped columns: %s.',
+                    $path,
                     $metadata->className,
-                    $id,
-                    $index + 1,
+                    implode(', ', $missing),
                 ));
             }
-            $offsets[$id] = $offset;
-            ++$index;
+
+            $ids = [];
+            $index = 0;
+            foreach ($stream->records() as $offset => $raw) {
+                // Every row is converted once, now, so invalid data is reported on first use; only the byte
+                // offset of the row is kept, which keeps the memory of big files low.
+                $id = $this->validateRow($metadata, $raw);
+                if (isset($offsets[$id])) {
+                    throw new StorageException(sprintf(
+                        'CSV file "%s" of entity "%s" has duplicate id "%s" (data row %d)%s.',
+                        $path,
+                        $metadata->className,
+                        $id,
+                        $index + 1,
+                        $metadata->isDirectory() ? sprintf(', already in "%s"', $paths[$this->fileOfLoadedId($fileIds, $ids, $id, count($files))]) : '',
+                    ));
+                }
+                $offsets[$id] = $offset;
+                $ids[] = $id;
+                ++$index;
+            }
+
+            $files[] = new TableFile($path, $stream->header, array_values(array_diff($stream->header, $metadata->getColumnNames())), $stream->fingerprint);
+            $streams[] = $stream;
+            $fileIds[] = $ids;
         }
 
         return new Table(
-            $stream->header,
-            array_values(array_diff($stream->header, $metadata->getColumnNames())),
-            new RowIndex($offsets, $stream),
-            $stream->fingerprint,
+            $files,
+            new RowIndex($offsets, $streams, $fileIds),
+            $metadata->isDirectory() ? $this->listingKey($paths) : '',
         );
+    }
+
+    /**
+     * Index of the file that already holds an id, while loading (error reporting only).
+     *
+     * @param list<list<string>> $fileIds ids of the files loaded so far
+     * @param list<string> $currentIds ids of the file being loaded
+     */
+    private function fileOfLoadedId(array $fileIds, array $currentIds, string $id, int $current): int
+    {
+        foreach ($fileIds as $index => $ids) {
+            if (in_array($id, $ids, true)) {
+                return $index;
+            }
+        }
+
+        return $current;
     }
 
     /**
@@ -671,6 +817,10 @@ final class UnitOfWork
     private function materialize(ClassMetadata $metadata, string $canonicalId, array $raw): object
     {
         $object = $this->hydrator->hydrate($metadata, $raw);
+        if ($metadata->sourceFileField !== null) {
+            $path = $this->getTable($metadata)->fileOfRow($canonicalId)->path;
+            $this->hydrator->setProperty($metadata->className, $object, $metadata->sourceFileField, $this->relativePath($metadata, $path));
+        }
         $this->identityMap[$metadata->className][$canonicalId] = $object;
         $oid = spl_object_id($object);
         $this->states[$oid] = ['class' => $metadata->className, 'id' => $canonicalId, 'state' => self::STATE_MANAGED];

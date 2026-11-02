@@ -31,6 +31,15 @@ interface CsvStorageInterface
     public function open(string $file, ?string $delimiter = null, ?string $enclosure = null): CsvStream;
 
     /**
+     * Relative paths (from the base directory, with "/") of the `.csv` files of a directory, sorted by path.
+     * Hidden files and directories (names starting with ".") and symbolic links are skipped. A missing
+     * directory has no files.
+     *
+     * @return list<string>
+     */
+    public function listFiles(string $directory, bool $recursive = true): array;
+
+    /**
      * Version of the file as it is now (see {@see Fingerprint}): the empty string when it does not exist.
      */
     public function fingerprint(string $file): string;

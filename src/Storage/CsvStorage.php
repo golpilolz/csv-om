@@ -99,6 +99,47 @@ final class CsvStorage implements CsvStorageInterface
         );
     }
 
+    public function listFiles(string $directory, bool $recursive = true): array
+    {
+        $root = $this->path($directory);
+        if (!is_dir($root)) {
+            return [];
+        }
+
+        $files = [];
+        $this->collect($root, rtrim(str_replace('\\', '/', $directory), '/'), $recursive, $files);
+        sort($files, SORT_STRING);
+
+        return $files;
+    }
+
+    /**
+     * @param list<string> $files
+     */
+    private function collect(string $absolute, string $relative, bool $recursive, array &$files): void
+    {
+        $entries = @scandir($absolute);
+        if ($entries === false) {
+            throw StorageException::unreadable($absolute);
+        }
+        foreach ($entries as $entry) {
+            if (str_starts_with($entry, '.')) {
+                continue;
+            }
+            $path = $absolute . '/' . $entry;
+            if (is_link($path)) {
+                continue;
+            }
+            if (is_dir($path)) {
+                if ($recursive) {
+                    $this->collect($path, $relative . '/' . $entry, true, $files);
+                }
+            } elseif (is_file($path) && strcasecmp(substr($entry, -4), '.csv') === 0) {
+                $files[] = $relative . '/' . $entry;
+            }
+        }
+    }
+
     public function fingerprint(string $file): string
     {
         return Fingerprint::ofPath($this->path($file));

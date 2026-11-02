@@ -48,6 +48,16 @@ final class MappingException extends \LogicException
         return new self(sprintf('Invalid #[CsvOm\\GeneratedValue] on "%s::$%s": %s.', $className, $field, $reason));
     }
 
+    public static function invalidDirectoryOptions(string $className, string $reason): self
+    {
+        return new self(sprintf('Invalid #[CsvOm\\Entity] options on "%s": %s.', $className, $reason));
+    }
+
+    public static function invalidSourceFile(string $className, string $field, string $reason): self
+    {
+        return new self(sprintf('Invalid #[CsvOm\\SourceFile] on "%s::$%s": %s.', $className, $field, $reason));
+    }
+
     public static function invalidLifecycleCallback(string $className, string $method, string $reason): self
     {
         return new self(sprintf('Invalid lifecycle callback "%s::%s()": %s.', $className, $method, $reason));

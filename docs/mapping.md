@@ -43,8 +43,54 @@ id;book_title;price;published_at;status
 | Option | Default | Description |
 |---|---|---|
 | `file` | short class name in snake_case + `.csv` (`ProductCategory` → `product_category.csv`) | Path relative to the configured directory. Absolute paths and `..` are rejected. Missing subdirectories are created on write. |
+| `directory` | none | Directory, relative to the configured directory, whose `.csv` files all hold rows of the entity; see [A directory of files](#a-directory-of-files). Exclusive with `file`. |
+| `recursive` | `true` | With `directory`: also read the subdirectories. |
+| `newFile` | none | With `directory`: file, relative to the directory, that receives new objects without a `#[SourceFile]` value. |
 | `repositoryClass` | `CSVRepository` | Must implement `RepositoryInterface`; see [Custom repositories](usage.md#custom-repositories). |
 | `delimiter`, `enclosure` | bundle configuration | One character each. |
+
+## A directory of files
+
+Map an entity to a directory instead of one file, and every `.csv` file in it, **and in its subdirectories**,
+is read as one table:
+
+```php
+#[CsvOm\Entity(directory: 'logs', newFile: 'inbox.csv')]
+class LogEntry
+{
+    #[CsvOm\Id] public int $id;
+    #[CsvOm\Column] public string $message = '';
+
+    #[CsvOm\SourceFile] public ?string $source = null;   // 'inbox.csv', '2024/march.csv', ...
+}
+```
+
+```
+csv/logs/inbox.csv
+csv/logs/2024/march.csv        ← all of these are LogEntry rows
+csv/logs/2024/archive/old.csv
+```
+
+- **What is read.** Files ending in `.csv` (any case), sorted by path; rows keep their file order, file after
+  file. Hidden files and directories (names starting with `.`), other extensions and symbolic links are
+  skipped. A missing directory is an empty table.
+- **One table.** `find()`, `findBy()`, `matching()`, `count()` and associations see all files at once. Ids must
+  be unique across **all** files (a duplicate is a `StorageException` naming both files, `persist()` refuses an
+  id found in any file). Every file needs the mapped columns, but each may order them differently and carry its
+  own unmapped columns, which survive writes as usual.
+- **Updates and removals** rewrite only the file the row comes from; the other files are not touched.
+- **New objects** are added to the file named by their `#[SourceFile]` property (created, with its
+  subdirectories, if missing; its header is the mapped columns). With no value, the entity's `newFile` is used and
+  written back to the property; with neither, `persist()` throws. A path must be relative to the directory, end
+  with `.csv`, and contain no `..`, no hidden part and no `\`; without `recursive`, no subdirectory either.
+- **`#[SourceFile]`** is an optional `?string` property that is not a column. It is filled when an object is
+  loaded. Rows are never moved between files: changing it on a managed object throws a `PersistenceException`
+  at `flush()`.
+- **Concurrency.** Each file is checked like a single-file entity (see [Limitations](limitations.md)), and so is
+  the list of files: a file created or deleted in the directory after the load makes `flush()` throw a
+  `ConcurrentModificationException`.
+- A many-to-many join file defaults to `<directory>_<property>.csv` next to the directory, so it is never
+  mistaken for a data file; `make:csv-entity` only generates single-file entities.
 
 ## `#[Id]`
 

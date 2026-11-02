@@ -221,6 +221,10 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
 
 ## Follow-up ideas
 
+- ✅ Directory entities: `#[Entity(directory:, recursive:, newFile:)]` reads every `.csv` of a directory tree as one
+  table (`Table` = list of `TableFile` + a `RowIndex` over several streams); `#[SourceFile]` exposes/chooses the file
+  of a row; writes are grouped per file; the file listing is part of the concurrency check.
+
 - ✅ Lifecycle events: entity callbacks (`#[PrePersist]` ... `#[PostLoad]`) and listeners (`EventManager`, `#[AsListener]`,
   tag `golpilolz_csv_om.event_listener`); `post*` events fire after all files of the flush are written. See `docs/events.md`.
 

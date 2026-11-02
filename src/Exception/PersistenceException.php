@@ -11,6 +11,21 @@ final class PersistenceException extends \RuntimeException
         return new self(sprintf('Cannot persist an entity "%s" without identifier: set it before persist(), or mark the id with #[CsvOm\\GeneratedValue].', $className));
     }
 
+    public static function noTargetFile(string $className): self
+    {
+        return new self(sprintf('Cannot persist an entity "%s": it has no file to be added to. Set its #[CsvOm\\SourceFile] property, or give #[CsvOm\\Entity] a "newFile".', $className));
+    }
+
+    public static function invalidTargetFile(string $className, string $file, string $reason): self
+    {
+        return new self(sprintf('Invalid file "%s" for an entity "%s": %s.', $file, $className, $reason));
+    }
+
+    public static function sourceFileChanged(string $className, string $id, string $from, string $to): self
+    {
+        return new self(sprintf('The source file of "%s" #%s changed from "%s" to "%s": rows cannot be moved between files.', $className, $id, $from, $to));
+    }
+
     public static function duplicateId(string $className, string $id): self
     {
         return new self(sprintf('An entity "%s" with id "%s" already exists.', $className, $id));
