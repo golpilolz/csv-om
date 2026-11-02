@@ -20,6 +20,8 @@ docker run --rm -u $(id -u):$(id -g) -v "$PWD":/app -w /app composer:2 \
 
 `phpunit.xml.dist` sets `failOnRisky` and `failOnWarning`. Tests live under `tests/` (namespace `Golpilolz\CsvOm\Tests\`). No linter or static analysis is configured. `config.platform.php` is pinned to 8.3.0 so dependencies resolve for the minimum supported PHP; also check on `php:8.3-cli` (`vendor/bin/phpunit` only, no composer in that image).
 
+CI (`.github/workflows/tests.yml`) runs PHP 8.3/8.4/8.5 × Symfony 6.4/7.4 with the platform pin removed, plus a `--prefer-lowest` job (PHP 8.3, Symfony 6.4) that guards the lower bounds in `composer.json`: when raising or adding a requirement, keep that job green. Lint workflow changes with `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7`.
+
 ## Architecture & status
 
 All v1 steps of **`docs/plan/object-manager.md`** are done; it records the design decisions (and follow-up ideas), read it before structural changes. Its "Current state" section describes the original Redis-derived starting point, not today's code. `README.md` is the user documentation: keep it in sync when behavior, options or exceptions change.
