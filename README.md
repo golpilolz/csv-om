@@ -172,6 +172,11 @@ $repository->findAll();      // in file order
 $repository->findBy(['status' => BookStatus::Published], ['publishedAt' => 'DESC'], limit: 10, offset: 20);
 $repository->findOneBy(['title' => 'Dune']);
 $repository->count(['price' => null]);
+
+// Magic finders on any mapped property (findBy<Property> / findOneBy<Property>)
+$repository->findOneById(7);
+$repository->findByStatus(BookStatus::Published, ['id' => 'DESC'], 10);  // value, orderBy, limit, offset
+$repository->findOneByTitle('Dune');
 ```
 
 - **One object per id.** `find()` and every finder return the same instance for the same id. Ids are

@@ -195,6 +195,34 @@ final class ObjectManagerTest extends TestCase
         self::assertNull($repository->findOneBy(['title' => 'none']));
     }
 
+    public function testMagicFinders(): void
+    {
+        $repository = $this->om->getRepository(Book::class);
+
+        self::assertSame($repository->findOneBy(['id' => 7]), $repository->findOneById(7));
+        self::assertSame($repository->findOneBy(['title' => 'Dune']), $repository->findOneByTitle('Dune'));
+        self::assertNull($repository->findOneByTitle('none'));
+        self::assertSame(
+            self::titles($repository->findBy(['status' => BookStatus::Published], ['id' => 'DESC'], 1)),
+            self::titles($repository->findByStatus(BookStatus::Published, ['id' => 'DESC'], 1)),
+        );
+    }
+
+    public function testMagicFinderErrors(): void
+    {
+        $repository = $this->om->getRepository(Book::class);
+
+        try {
+            $repository->findByNope('x');
+            self::fail('Expected QueryException');
+        } catch (QueryException $e) {
+            self::assertStringContainsString('Unknown field "nope"', $e->getMessage());
+        }
+
+        $this->expectException(\BadMethodCallException::class);
+        $repository->doSomething();
+    }
+
     #[DataProvider('provideInvalidQueries')]
     public function testInvalidQueries(array $criteria, ?array $orderBy, ?int $limit, ?int $offset, string $messagePart): void
     {
