@@ -7,8 +7,9 @@ namespace Golpilolz\CsvOm\Om;
 use Golpilolz\CsvOm\Client\CSVClient;
 use Golpilolz\CsvOm\Client\CSVClientInterface;
 use Golpilolz\CsvOm\Om\Mapping\Entity;
+use Golpilolz\CsvOm\Om\Repository\RepositoryInterface;
 
-final class CSVObjectManager
+final class CSVObjectManager implements CSVObjectManagerInterface
 {
     /** @var array<string, Entity> */
     private array $entityMapperCache = [];
@@ -20,7 +21,7 @@ final class CSVObjectManager
 
     public function __construct(?CSVClientInterface $csvClient = null)
     {
-        $this->csvClient = $csvClient ?? new CsvClient();
+        $this->csvClient = $csvClient ?? new CSVClient();
     }
 
     protected function getEntityMapper(string|object $object): Entity
@@ -34,18 +35,11 @@ final class CSVObjectManager
         $reflectionClass = new \ReflectionClass($className);
         $attributes = $reflectionClass->getAttributes(Entity::class);
         if ($attributes === []) {
-            throw new \InvalidArgumentException('The object must be annotated with #[RedisOm\Entity] attribute');
+            throw new \InvalidArgumentException('The object must be annotated with #[CsvOm\Entity] attribute');
         }
 
         /** @var Entity $csvEntity */
         $csvEntity = $attributes[0]->newInstance();
-
-//        $redisEntity->repository->setPrefix($redisEntity->prefix ?? $reflectionClass->getName());
-//        $redisEntity->repository->setClassName($reflectionClass->getName());
-//        $redisEntity->repository->setConverter($redisEntity->converter ?? ($redisEntity->format === RedisFormat::HASH->value ? new HashObjectConverter() : new JsonObjectConverter()));
-
-//        $redisEntity->repository->setRedisClient($this->redisClient);
-//        $redisEntity->repository->setFormat($redisEntity->format);
 
         $this->entityMapperCache[$className] = $csvEntity;
 
@@ -65,13 +59,16 @@ final class CSVObjectManager
         $objectMapper = $this->getEntityMapper($className);
         $object = $objectMapper->repository->find((string)$id);
 
-        // Store in identity map and take snapshot for dirty tracking
-        if ($object !== null) {
-            $this->identityMap[$className][$id] = $object;
-            $snapshotKey = $className . ':' . $id;
-            $this->snapshots[$snapshotKey] = $objectMapper->converter->convert($object);
-        }
-
         return $object;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getRepository(string $className): RepositoryInterface
+    {
+        $objectMapper = $this->getEntityMapper($className);
+
+        return $objectMapper->repository;
     }
 }

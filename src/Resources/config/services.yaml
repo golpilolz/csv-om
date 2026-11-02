@@ -1,0 +1,9 @@
+parameters:
+
+services:
+  golpilolz_csv_om.object_manager:
+    class: Golpilolz\CsvOm\Om\CSVObjectManager
+    public: true
+
+  Golpilolz\CsvOm\Om\CSVObjectManagerInterface:
+    alias: golpilolz_csv_om.object_manager

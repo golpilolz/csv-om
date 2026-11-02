@@ -7,14 +7,13 @@ namespace Golpilolz\CsvOm\Client;
 interface CSVClientInterface
 {
     /**
-     * Search objects by given prefix key and criterias.
-     */
-    /**
-     * @param string $prefixKey
-     * @param array $search
-     * @param array $orderBy
-     * @return array
+     * Search rows by given prefix key and criteria.
      */
     public function search(string $prefixKey, array $search, array $orderBy): array;
+
+    /**
+     * Run a raw query against the given prefix key.
+     */
+    public function customSearch(string $prefixKey, string $query, string $format): array;
 
 }

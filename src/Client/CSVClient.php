@@ -17,8 +17,14 @@ final class CSVClient implements CSVClientInterface
 
     public function search(string $prefixKey, array $search, array $orderBy): array
     {
+        return [];
+    }
 
-
+    /**
+     * @inheritdoc
+     */
+    public function customSearch(string $prefixKey, string $query, string $format): array
+    {
         return [];
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Golpilolz\CsvOm\Om\Repository;
 
 use Golpilolz\CsvOm\Client\CSVClientInterface;
+use Golpilolz\CsvOm\Om\QueryBuilder;
 
 final class CSVRepository implements RepositoryInterface
 {
@@ -23,16 +24,28 @@ final class CSVRepository implements RepositoryInterface
             []
         );
 
-//        $collection = [];
-//        foreach ($data as $item) {
-//            $collection[] = $this->converter->revert($item, $this->className);
-//        }
-
         return $data;
     }
 
     public function find($identifier): ?object
     {
-        return null;
+        $object = $this->csvClient->search(
+            $this->prefix,
+            ['id' => $identifier],
+            []
+        );
+
+        return $object;
     }
+
+    /**
+     * @inheritdoc
+     */
+    public function createQueryBuilder(): QueryBuilder
+    {
+        return new QueryBuilder(
+            csvClient: $this->csvClient,
+        );
+    }
+
 }
