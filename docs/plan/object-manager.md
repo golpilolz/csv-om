@@ -93,9 +93,13 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
    - `Column` infers `type`/`nullable` from the property type; backed enums map to their backing type + `enumType`.
    - Column name defaults to the property name; `#[Id]` alone implies a column; id must be non-nullable `int`/`string`.
    - `ClassMetadata`, `MetadataFactory` with validation (exactly one `#[Id]`, entity attribute present) and clear exceptions.
-3. **Storage**
+3. **Storage** — ✅ done
    - `CsvStorageInterface::read(string $file, ...): iterable<array<string,string>>` and `write(...)`.
    - Atomic write with lock; exception when file missing on read (or empty table, configurable).
+   - Done as: `read()` returns a `CsvTable` (header + rows keyed by column) and is strict (wrong field count,
+     duplicate header → `StorageException`); missing file throws, `exists()` lets callers decide (steps 5/6).
+     RFC 4180 quoting (escape char `''`). Writers lock a sidecar `.<file>.lock`; temp file keeps the target's mode.
+     `Client\CSVClient` is still there, unused by storage; it is removed when repositories are wired in step 5.
 4. **Types & hydration**
    - `TypeConverter` (to PHP / to CSV string), `ObjectHydrator` (hydrate / extract).
 5. **Read path**
