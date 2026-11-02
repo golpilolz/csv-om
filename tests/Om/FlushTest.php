@@ -9,6 +9,7 @@ use Golpilolz\CsvOm\Exception\PersistenceException;
 use Golpilolz\CsvOm\Exception\StorageException;
 use Golpilolz\CsvOm\Om\ObjectManager;
 use Golpilolz\CsvOm\Storage\CsvStorage;
+use Golpilolz\CsvOm\Storage\CsvStream;
 use Golpilolz\CsvOm\Storage\CsvStorageInterface;
 use Golpilolz\CsvOm\Storage\CsvTable;
 use Golpilolz\CsvOm\Tests\CsvDirectoryTrait;
@@ -323,6 +324,11 @@ final class FlushTest extends TestCase
             public function read(string $file, ?string $delimiter = null, ?string $enclosure = null): CsvTable
             {
                 return $this->inner->read($file, $delimiter, $enclosure);
+            }
+
+            public function open(string $file, ?string $delimiter = null, ?string $enclosure = null): CsvStream
+            {
+                return $this->inner->open($file, $delimiter, $enclosure);
             }
 
             public function write(string $file, array $header, iterable $rows, ?string $delimiter = null, ?string $enclosure = null): void

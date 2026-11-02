@@ -100,15 +100,17 @@ final class UnitOfWork
             throw QueryException::invalidLimit('offset', $offset);
         }
 
-        $rows = $this->match($metadata, $criteria);
+        $ids = $this->match($metadata, $criteria);
         if ($orderBy !== []) {
-            $rows = $this->sort($metadata, $rows, $orderBy);
+            $ids = $this->sort($metadata, $ids, $orderBy);
         }
-        $rows = array_slice($rows, $offset, $limit, true);
+        $ids = array_slice($ids, $offset, $limit);
 
+        $table = $this->getTable($metadata);
         $objects = [];
-        foreach ($rows as $id => $raw) {
-            $objects[] = $this->identityMap[$metadata->className][(string) $id] ?? $this->materialize($metadata, (string) $id, $raw);
+        foreach ($ids as $id) {
+            $id = (string) $id;
+            $objects[] = $this->identityMap[$metadata->className][$id] ?? $this->materialize($metadata, $id, $table->rows[$id]);
         }
 
         return $objects;
@@ -220,16 +222,26 @@ final class UnitOfWork
                 $metadata->file,
                 $table->header,
                 (static function () use ($plan, $table): \Generator {
-                    foreach ($plan['rows'] as $row) {
-                        // Cells in header order; the storage writes them by column name.
-                        yield array_replace(array_fill_keys($table->header, ''), $row);
+                    $blank = array_fill_keys($table->header, '');
+                    // Rows are streamed from the old file; only the changed ones are held in memory.
+                    // Cells in header order; the storage writes them by column name.
+                    foreach ($table->rows as $id => $row) {
+                        if (!isset($plan['removedIds'][$id])) {
+                            yield array_replace($blank, $plan['changes'][$id] ?? $row);
+                        }
+                    }
+                    foreach ($plan['changes'] as $id => $row) {
+                        if (!isset($table->rows[$id])) {
+                            yield array_replace($blank, $row);
+                        }
                     }
                 })(),
                 $metadata->delimiter,
                 $metadata->enclosure,
             );
 
-            $table->setRows($plan['rows']);
+            // The file changed: forget its index and loaded columns, the next read loads it again.
+            unset($this->tables[$className]);
             foreach ($plan['inserted'] as $oid) {
                 $this->states[$oid]['state'] = self::STATE_MANAGED;
             }
@@ -293,12 +305,13 @@ final class UnitOfWork
     /**
      * @param ClassMetadata<object> $metadata
      * @param array<string, object> $objects canonical id => object
-     * @return array{rows: array<string, array<string, string>>, inserted: list<int>, removed: list<int>}|null
+     * @return array{changes: array<string, array<string, string>>, removedIds: array<string, true>, inserted: list<int>, removed: list<int>}|null
      */
     private function computeChanges(ClassMetadata $metadata, array $objects): ?array
     {
         $table = $this->getTable($metadata);
-        $rows = $table->rows;
+        $changes = [];
+        $removedIds = [];
         $inserted = [];
         $removed = [];
         $changed = false;
@@ -309,7 +322,7 @@ final class UnitOfWork
             $state = $this->states[$oid]['state'];
 
             if ($state === self::STATE_REMOVED) {
-                unset($rows[$id]);
+                $removedIds[$id] = true;
                 $removed[] = $oid;
                 $changed = true;
                 continue;
@@ -325,21 +338,22 @@ final class UnitOfWork
                 $raw = array_fill_keys($table->extraColumns, '');
                 $inserted[] = $oid;
             } else {
-                if ($this->sameValues($metadata, $cells, $rows[$id])) {
+                $original = $table->rows[$id];
+                if ($this->sameValues($metadata, $cells, $original)) {
                     continue;
                 }
                 // Keep unmapped cells as read; replace mapped ones.
-                $raw = $rows[$id];
+                $raw = $original;
             }
 
             foreach ($cells as $column => $value) {
                 $raw[$column] = $value ?? '';
             }
-            $rows[$id] = $raw;
+            $changes[$id] = $raw;
             $changed = true;
         }
 
-        return $changed ? ['rows' => $rows, 'inserted' => $inserted, 'removed' => $removed] : null;
+        return $changed ? ['changes' => $changes, 'removedIds' => $removedIds, 'inserted' => $inserted, 'removed' => $removed] : null;
     }
 
     /**
@@ -368,12 +382,12 @@ final class UnitOfWork
     private function load(ClassMetadata $metadata): Table
     {
         if (!$this->storage->exists($metadata->file)) {
-            return new Table($metadata->getColumnNames(), [], []);
+            return new Table($metadata->getColumnNames(), [], new RowIndex());
         }
 
-        $csv = $this->storage->read($metadata->file, $metadata->delimiter, $metadata->enclosure);
+        $stream = $this->storage->open($metadata->file, $metadata->delimiter, $metadata->enclosure);
 
-        $missing = array_diff($metadata->getColumnNames(), $csv->header);
+        $missing = array_diff($metadata->getColumnNames(), $stream->header);
         if ($missing !== []) {
             throw new StorageException(sprintf(
                 'CSV file "%s" of entity "%s" is missing mapped columns: %s.',
@@ -383,12 +397,13 @@ final class UnitOfWork
             ));
         }
 
-        $rows = [];
-        foreach ($csv->rows as $index => $raw) {
-            // Every row is converted once, now, so invalid data is reported on first use; nothing is kept
-            // from the conversion (raw cells only), which keeps the memory of big files low.
+        $offsets = [];
+        $index = 0;
+        foreach ($stream->records() as $offset => $raw) {
+            // Every row is converted once, now, so invalid data is reported on first use; only the byte
+            // offset of the row is kept, which keeps the memory of big files low.
             $id = $this->validateRow($metadata, $raw);
-            if (isset($rows[$id])) {
+            if (isset($offsets[$id])) {
                 throw new StorageException(sprintf(
                     'CSV file "%s" of entity "%s" has duplicate id "%s" (data row %d).',
                     $metadata->file,
@@ -397,13 +412,14 @@ final class UnitOfWork
                     $index + 1,
                 ));
             }
-            $rows[$id] = $raw;
+            $offsets[$id] = $offset;
+            ++$index;
         }
 
         return new Table(
-            $csv->header,
-            array_values(array_diff($csv->header, $metadata->getColumnNames())),
-            $rows,
+            $stream->header,
+            array_values(array_diff($stream->header, $metadata->getColumnNames())),
+            new RowIndex($offsets, $stream),
         );
     }
 
@@ -919,13 +935,13 @@ final class UnitOfWork
 
     /**
      * @param array<string, mixed> $criteria
-     * @return array<string, array<string, string>> raw rows by id
+     * @return list<int|string> ids of the matching rows, in file order
      */
     private function match(ClassMetadata $metadata, array $criteria): array
     {
         $table = $this->getTable($metadata);
         if ($criteria === []) {
-            return $table->rows;
+            return $table->rows->ids();
         }
 
         // Normalize every criterion once: field => list of accepted canonical values.
@@ -955,13 +971,13 @@ final class UnitOfWork
         }
 
         $matching = [];
-        foreach ($table->rows as $id => $raw) {
+        foreach ($table->rows->ids() as $id) {
             foreach ($accepted as $field => $values) {
                 if (!in_array($columns[$field][$id], $values, true)) {
                     continue 2;
                 }
             }
-            $matching[$id] = $raw;
+            $matching[] = $id;
         }
 
         return $matching;
@@ -985,11 +1001,11 @@ final class UnitOfWork
     /**
      * Stable sort on converted PHP values; nulls come first in ascending order.
      *
-     * @param array<string, array<string, string>> $rows raw rows by id
+     * @param list<int|string> $ids
      * @param array<string, string> $orderBy
-     * @return array<string, array<string, string>>
+     * @return list<int|string>
      */
-    private function sort(ClassMetadata $metadata, array $rows, array $orderBy): array
+    private function sort(ClassMetadata $metadata, array $ids, array $orderBy): array
     {
         $table = $this->getTable($metadata);
         $order = [];
@@ -1009,7 +1025,6 @@ final class UnitOfWork
             $values[$field] = $this->valueColumn($metadata, $table, $field);
         }
 
-        $ids = array_keys($rows);
         usort($ids, static function (int|string $a, int|string $b) use ($order, $values): int {
             foreach ($order as $field => $sign) {
                 $x = $values[$field][$a];
@@ -1027,11 +1042,6 @@ final class UnitOfWork
             return 0;
         });
 
-        $sorted = [];
-        foreach ($ids as $id) {
-            $sorted[$id] = $rows[$id];
-        }
-
-        return $sorted;
+        return $ids;
     }
 }

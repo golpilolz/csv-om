@@ -7,9 +7,9 @@ namespace Golpilolz\CsvOm\Om;
 /**
  * In-memory content of one entity file, as loaded. Internal to the unit of work.
  *
- * Only the raw cells are kept per row. Converted values are derived on demand, one field at a time, and
- * cached per field ({@see self::$canonicalColumns}, {@see self::$valueColumns}), so a big file costs
- * roughly the size of its text plus the fields that queries actually use.
+ * Rows stay on disk: only their byte offsets are kept ({@see RowIndex}). Converted values are derived on demand,
+ * one field at a time, and cached per field ({@see self::$canonicalColumns}, {@see self::$valueColumns}), so a big
+ * file costs a few dozen bytes per row plus the fields that queries actually use.
  *
  * @internal
  */
@@ -24,23 +24,13 @@ final class Table
     /**
      * @param list<string> $header header of the file (mapped columns first when the file did not exist)
      * @param list<string> $extraColumns columns present in the file but not mapped; kept so they can be written back
-     * @param array<string, array<string, string>> $rows raw cells (mapped and extra columns) as read, keyed by
-     *        canonical id, in file order
+     * @param RowIndex $rows raw cells (mapped and extra columns) as read, by canonical id, in file order; rows are
+     *        read from the file on demand
      */
     public function __construct(
         public readonly array $header,
         public readonly array $extraColumns,
-        public array $rows,
+        public readonly RowIndex $rows,
     ) {
-    }
-
-    /**
-     * @param array<string, array<string, string>> $rows
-     */
-    public function setRows(array $rows): void
-    {
-        $this->rows = $rows;
-        $this->canonicalColumns = [];
-        $this->valueColumns = [];
     }
 }

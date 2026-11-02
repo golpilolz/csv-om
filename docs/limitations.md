@@ -1,10 +1,12 @@
 # Limitations
 
-- **Whole files in memory.** CSV has no indexes: a file is loaded completely, once per object manager (per
-  request). Only the raw cells are kept (about 1 KB per row for a 9-column file: 100,000 rows load in
-  ~110 MB); every row is still validated on load, and converted values are derived per field, on demand,
-  when a query filters or sorts on it. `findAll()` also builds one object per row. It suits small to medium
-  data sets; raise PHP's `memory_limit` for bigger ones.
+- **Row index in memory.** CSV has no indexes, so a file is scanned once per object manager (per request) and
+  every row is validated. Rows are not kept: only the byte offset of each one is (a few dozen bytes per row), and
+  a row is read from the file when an object is built from it. A 160 MB file of 2 million rows runs within a
+  256 MB `memory_limit`, but the scan takes seconds. Converted values are derived per field, on demand, when a
+  query filters or sorts on it, and kept for the request. `findAll()` and wide queries still build one object
+  per matching row, so they need memory in proportion to the result. A cell with an unclosed quote swallows the
+  rest of the file as one value.
 - **No protection against lost updates between processes.** Writes are atomic (temporary file, `fsync`, then
   `rename()`, so readers never see a partial file), and concurrent writers are serialized with `flock()` on a
   `.<file>.lock` file kept next to each data file. But two processes that both load and then flush the same file

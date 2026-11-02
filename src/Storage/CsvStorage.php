@@ -79,6 +79,23 @@ final class CsvStorage implements CsvStorageInterface
         return new CsvTable($header ?? [], $rows);
     }
 
+    public function open(string $file, ?string $delimiter = null, ?string $enclosure = null): CsvStream
+    {
+        $path = $this->path($file);
+        if (!is_file($path)) {
+            throw StorageException::fileNotFound($path);
+        }
+        if (!is_readable($path)) {
+            throw StorageException::unreadable($path);
+        }
+
+        return new CsvStream(
+            $path,
+            $this->resolve('delimiter', $delimiter, $this->delimiter),
+            $this->resolve('enclosure', $enclosure, $this->enclosure),
+        );
+    }
+
     public function write(string $file, array $header, iterable $rows, ?string $delimiter = null, ?string $enclosure = null): void
     {
         $path = $this->path($file);

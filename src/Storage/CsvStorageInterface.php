@@ -23,6 +23,13 @@ interface CsvStorageInterface
     public function read(string $file, ?string $delimiter = null, ?string $enclosure = null): CsvTable;
 
     /**
+     * Opens the file for streaming reads, without loading its rows.
+     *
+     * @throws StorageException when the file is missing, unreadable or has a malformed header
+     */
+    public function open(string $file, ?string $delimiter = null, ?string $enclosure = null): CsvStream;
+
+    /**
      * Atomically replaces the file content. Each row must have exactly the header columns as keys;
      * null values are written as empty fields.
      *

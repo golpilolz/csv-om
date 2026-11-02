@@ -75,6 +75,52 @@ final class CsvStorageTest extends TestCase
         self::assertSame([], $this->storage->read('empty.csv')->rows);
     }
 
+    public function testOpenStreamsRowsByOffsetWithoutLoadingTheFile(): void
+    {
+        $this->put('s.csv', "\xEF\xBB\xBFid,note\r\n\r\n1,\"two\nlines\"\r\n2,\"a \"\"q\"\" b\"\n3,end");
+
+        $stream = $this->storage->open('s.csv');
+        self::assertSame(['id', 'note'], $stream->header);
+
+        $offsets = [];
+        $rows = [];
+        foreach ($stream->records() as $offset => $row) {
+            $offsets[] = $offset;
+            $rows[] = $row;
+        }
+        self::assertSame([
+            ['id' => '1', 'note' => "two\nlines"],
+            ['id' => '2', 'note' => 'a "q" b'],
+            ['id' => '3', 'note' => 'end'],
+        ], $rows);
+
+        // Random access, in any order, also while a sequential read is in progress.
+        self::assertSame($rows[2], $stream->rowAt($offsets[2]));
+        self::assertSame($rows[0], $stream->rowAt($offsets[0]));
+    }
+
+    public function testOpenReportsMalformedRecordsAndMissingFiles(): void
+    {
+        $this->put('bad.csv', "id,name\n1,a\n2\n");
+        $this->put('dup.csv', "id,id\n");
+
+        try {
+            iterator_to_array($this->storage->open('bad.csv')->records());
+            self::fail('Expected a StorageException.');
+        } catch (StorageException) {
+        }
+
+        $this->expectException(StorageException::class);
+        try {
+            $this->storage->open('dup.csv');
+        } finally {
+            try {
+                $this->storage->open('missing.csv');
+            } catch (StorageException) {
+            }
+        }
+    }
+
     public function testMissingBaseDirectoryIsAConfigurationError(): void
     {
         $storage = new CsvStorage($this->dir . '/nope');
