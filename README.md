@@ -284,6 +284,11 @@ All exceptions are in `Golpilolz\CsvOm\Exception`:
 - `Golpilolz\CsvOm\Om\CSVObjectManagerInterface` (interface and service alias): type-hint
   `ObjectManagerInterface` instead. The service still implements it.
 
+## More documentation
+
+- [Cookbook](docs/cookbook.md): worked examples, testing, troubleshooting.
+- [Architecture](docs/architecture.md): code map and invariants, for contributors.
+
 ## Development
 
 PHPUnit 11 tests live in `tests/`. Without a local PHP, run them in a container:
