@@ -1,0 +1,102 @@
+name: Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # composer.lock is not committed: dependencies are resolved on every run.
+  COMPOSER_ROOT_VERSION: dev-main
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }} · Symfony ${{ matrix.symfony }}${{ matrix.dependencies == 'lowest' && ' · lowest' || '' }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ "8.3", "8.4", "8.5" ]
+        symfony: [ "7.4.*", "8.*" ]
+        dependencies: [ "highest" ]
+        exclude:
+          # Symfony 8 requires PHP 8.4.
+          - php: "8.3"
+            symfony: "8.*"
+        include:
+          # Proves the lower bounds declared in composer.json (league/csv, psr/container, phpunit, Symfony).
+          - php: "8.3"
+            symfony: "7.4.*"
+            dependencies: "lowest"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Resolve dependencies for this PHP and Symfony version
+        run: |
+          # The platform pin (8.3) keeps local installs on the minimum version; CI tests each PHP for real.
+          composer config --unset platform.php
+          composer require --no-update --no-interaction \
+            symfony/config:"${{ matrix.symfony }}" \
+            symfony/dependency-injection:"${{ matrix.symfony }}" \
+            symfony/http-kernel:"${{ matrix.symfony }}" \
+            symfony/yaml:"${{ matrix.symfony }}"
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          dependency-versions: ${{ matrix.dependencies }}
+          composer-options: --prefer-dist --no-progress
+          # Separate cache per matrix entry, as the resolved versions differ.
+          custom-cache-suffix: sf${{ matrix.symfony }}
+
+      - name: Show resolved versions
+        run: composer show | grep -E '^(league/csv|psr/container|phpunit/phpunit|symfony/[a-z-]+) '
+
+      - name: Run PHPUnit
+        run: vendor/bin/phpunit
+
+  rector:
+    # Fails when code that Rector would upgrade (PHP 8.3, Symfony, PHPUnit deprecations) is introduced.
+    name: Rector
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+          tools: composer:v2
+
+      # The platform pin is kept: rules must target the minimum supported versions (Symfony 7.4).
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          composer-options: --prefer-dist --no-progress
+
+      - name: Rector (dry run)
+        run: composer rector -- --no-progress-bar

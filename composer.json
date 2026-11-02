@@ -2,7 +2,7 @@
   "name": "golpilolz/csv-om",
   "type": "symfony-bundle",
   "description": "Object manager for CSV files",
-  "keywords": ["bundle", "symfony"],
+  "keywords": ["bundle", "symfony", "csv", "object-manager"],
   "license": "MIT",
   "authors": [
     {
@@ -10,6 +10,19 @@
       "homepage": "https://github.com/golpilolz/csv-om/graphs/contributors"
     }
   ],
+  "require": {
+    "php": ">=8.3",
+    "psr/container": "^1.1 | ^2.0",
+    "league/csv": "^9.28",
+    "symfony/config": "^7.4 | ^8",
+    "symfony/dependency-injection": "^7.4 | ^8",
+    "symfony/http-kernel": "^7.4 | ^8",
+    "symfony/yaml": "^7.4 | ^8"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.5",
+    "rector/rector": "^2.8"
+  },
   "autoload": {
     "psr-4": {
       "Golpilolz\\CsvOm\\": "src/"
@@ -20,8 +33,17 @@
       "Golpilolz\\CsvOm\\Tests\\": "tests/"
     }
   },
-  "require": {
-    "league/csv": "^9.28"
+  "scripts": {
+    "test": "phpunit",
+    "rector": "rector process --dry-run",
+    "rector:fix": "rector process"
   },
-  "minimum-stability": "dev"
+  "minimum-stability": "stable",
+  "prefer-stable": true,
+  "config": {
+    "sort-packages": true,
+    "platform": {
+      "php": "8.3.0"
+    }
+  }
 }
