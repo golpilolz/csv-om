@@ -29,6 +29,7 @@ Current wiring:
 - Mapping: `Om\Mapping\{Entity, Id, Column, Types}` attributes hold only scalars. `Om\Metadata\MetadataFactory` turns them into cached `ClassMetadata`/`FieldMapping`, inferring column type/nullability from PHP property types and throwing `Exception\MappingException` (named constructors) on invalid mappings.
 - `CSVObjectManager` gets metadata from the factory and instantiates `repositoryClass` per entity (cached), setting `className` and `prefix` (= file). The repository still has no client, so `find()` fails until step 5. No identity map yet.
 - `Storage\CsvStorage` (behind `CsvStorageInterface`) does all file IO: strict reads into `CsvTable`, atomic writes (temp file + `fsync` + `rename`, sidecar `.<file>.lock` flock), RFC 4180 quoting with escape `''` (league's backslash default corrupts values ending in `\`). Paths are relative to the base directory; absolute/`..` paths are rejected. Not registered as a service yet.
+- `Om\Type\TypeConverter` (cell string ↔ PHP value, strict, throws `ConversionException`) and `Om\Hydrator\ObjectHydrator` (row ↔ object without the constructor, via closures bound to the declaring class so private/readonly work; `HydrationException` for missing columns, uninitialized non-nullable props, wrong class). Floats are written with `var_export` on purpose (round-trip precision), dates with `Column(format:)` (default ATOM).
 - `Client\CSVClient` is legacy (reads `$_SERVER['DATABASE_CSV_DIR']`, stub methods); it goes away when repositories use storage in step 5.
 - `QueryBuilder` is planned to be dropped.
 

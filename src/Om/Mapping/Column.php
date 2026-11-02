@@ -16,11 +16,14 @@ final class Column
      * @param string|null $name Column name in the CSV header. Defaults to the property name.
      * @param string|null $type One of the {@see Types} constants. Inferred from the property type when null.
      * @param bool|null $nullable Whether an empty cell maps to null. Inferred from the property type when null.
+     * @param string|null $format Date format ({@see \DateTimeInterface::format()}) for datetime columns.
+     *                            Defaults to {@see \DateTimeInterface::ATOM}.
      */
     public function __construct(
         public readonly ?string $name = null,
         public readonly ?string $type = null,
         public readonly ?bool $nullable = null,
+        public readonly ?string $format = null,
     ) {
     }
 }

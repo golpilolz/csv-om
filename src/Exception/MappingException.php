@@ -68,6 +68,11 @@ final class MappingException extends \LogicException
         return new self(sprintf('"%s::$%s" is mapped as nullable but its PHP type does not allow null.', $className, $field));
     }
 
+    public static function formatNotAllowed(string $className, string $field, string $type): self
+    {
+        return new self(sprintf('Option "format" on "%s::$%s" is only supported for "%s" columns, column type is "%s".', $className, $field, Types::DATETIME_IMMUTABLE, $type));
+    }
+
     public static function duplicateColumn(string $className, string $column): self
     {
         return new self(sprintf('Column "%s" is mapped more than once in "%s".', $column, $className));

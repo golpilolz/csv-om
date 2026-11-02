@@ -145,6 +145,7 @@ final class MetadataFactory
                 columnName: $column->name ?? $field,
                 type: $column->type,
                 nullable: $this->resolveNullable($className, $field, $column, $propertyType->allowsNull()),
+                format: $this->resolveFormat($className, $field, $column, $column->type),
             );
         }
 
@@ -183,7 +184,21 @@ final class MetadataFactory
             type: $type,
             nullable: $this->resolveNullable($className, $field, $column, $allowsNull),
             enumType: $enumType,
+            format: $this->resolveFormat($className, $field, $column, $type),
         );
+    }
+
+    private function resolveFormat(string $className, string $field, Column $column, string $type): ?string
+    {
+        if ($type !== Types::DATETIME_IMMUTABLE) {
+            if ($column->format !== null) {
+                throw MappingException::formatNotAllowed($className, $field, $type);
+            }
+
+            return null;
+        }
+
+        return $column->format ?? \DateTimeInterface::ATOM;
     }
 
     private function resolveNullable(string $className, string $field, Column $column, bool $allowsNull): bool

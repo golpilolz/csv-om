@@ -72,6 +72,9 @@ final class MetadataFactoryTest extends TestCase
             self::assertSame($enumType, $mapping->enumType, $field);
         }
 
+        self::assertSame(\DateTimeInterface::ATOM, $metadata->getFieldMapping('publishedAt')->format);
+        self::assertNull($metadata->getFieldMapping('title')->format);
+
         self::assertSame('title', $metadata->getFieldForColumn('book_title'));
         self::assertNull($metadata->getFieldForColumn('title'));
     }
@@ -189,6 +192,11 @@ final class MetadataFactoryTest extends TestCase
             #[CsvOm\Id] public int $id;
             #[CsvOm\Column(nullable: true)] public string $name;
         })::class, 'does not allow null'];
+
+        yield 'format on non date column' => [(new #[CsvOm\Entity] class {
+            #[CsvOm\Id] public int $id;
+            #[CsvOm\Column(format: 'Y-m-d')] public string $day;
+        })::class, 'Option "format" on'];
 
         yield 'duplicate column' => [(new #[CsvOm\Entity] class {
             #[CsvOm\Id] public int $id;

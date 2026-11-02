@@ -100,9 +100,17 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
      duplicate header → `StorageException`); missing file throws, `exists()` lets callers decide (steps 5/6).
      RFC 4180 quoting (escape char `''`). Writers lock a sidecar `.<file>.lock`; temp file keeps the target's mode.
      `Client\CSVClient` is still there, unused by storage; it is removed when repositories are wired in step 5.
-4. **Types & hydration**
+4. **Types & hydration** — ✅ done
    - `TypeConverter` (to PHP / to CSV string), `ObjectHydrator` (hydrate / extract).
+   - Done as: strict parsing (`ConversionException` names entity, id, field, value); `Column(format:)` added for
+     dates (default ATOM, `!`-prefixed strict parse); floats written with `var_export` (round-trip precision);
+     bool written `1`/`0`, read `1/0/true/false`. Hydration bypasses the constructor and sets properties via a
+     closure bound to the declaring class (private/readonly OK). Column order = reflection order: own properties
+     first, then inherited ones. `extractId()` returns the id as written in CSV (null when unset).
 5. **Read path**
+   - Decide how a file header that differs from the mapped columns is handled. Mapped column missing → error.
+     Extra, unmapped columns: since `flush()` rewrites the file from mapped columns only, they would be silently
+     dropped. Either reject them on read or keep them per row and write them back (preferred: no data loss).
    - `UnitOfWork` identity map + table cache; `ObjectManager::find`, `getRepository`;
      `CsvRepository::find/findAll/findBy/findOneBy/count`.
    - Milestone: `/csv` route in the test app returns `Test#1 margot`.
