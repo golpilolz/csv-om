@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Om\Metadata;
 
+use Golpilolz\CsvOm\Om\Mapping\GeneratedValue;
+
 /**
  * Mapping information of one CSV entity.
  *
@@ -24,6 +26,7 @@ final readonly class ClassMetadata
      * @param array<string, AssociationMapping> $associationMappings field name => mapping, in declaration order
      * @param string|null $delimiter null means "use the configured default"
      * @param string|null $enclosure null means "use the configured default"
+     * @param string|null $idGenerator a {@see GeneratedValue} strategy, null when ids are assigned by the application
      */
     public function __construct(
         public string $className,
@@ -34,6 +37,7 @@ final readonly class ClassMetadata
         public ?string $delimiter = null,
         public ?string $enclosure = null,
         public array $associationMappings = [],
+        public ?string $idGenerator = null,
     ) {
         $columnMappings = $fieldMappings;
         foreach ($associationMappings as $association) {

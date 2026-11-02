@@ -51,8 +51,28 @@ id;book_title;price;published_at;status
 Marks the identifier. Exactly one property per entity carries it. It must be a non-nullable `int` or
 `string` (or a backed enum). `#[Id]` implies `#[Column]`, so add `#[Column]` only to change its options.
 
-Ids are **assigned by the application**: there is no auto-increment. Set the id before `persist()`, and
-don't change it once the object is managed.
+By default ids are **assigned by the application**: set the id before `persist()`, and don't change it once
+the object is managed. Add `#[GeneratedValue]` to have it generated instead.
+
+### `#[GeneratedValue]`
+
+```php
+#[CsvOm\Id]
+#[CsvOm\GeneratedValue]                                      // INCREMENT (default), int id
+public int $id;
+
+#[CsvOm\Id]
+#[CsvOm\GeneratedValue(strategy: CsvOm\GeneratedValue::UUID)] // random UUID v4, string id
+public string $id;
+```
+
+Leave the id property uninitialized: `persist()` generates it, so `$object->id` is available right after
+`persist()`, before `flush()`. An id that is already set is kept (and checked for duplicates as usual).
+
+- `INCREMENT`: highest id known in the file or among persisted objects + 1 (1 for an empty file). Ids of rows
+  removed in the same unit of work are not reused. Two processes persisting at the same time can pick the same
+  id and the last flush wins (see [Limitations](limitations.md)): use `UUID` when several writers share a file.
+- `UUID`: needs a `string` id. Enum ids are not supported.
 
 ## `#[Column]`
 

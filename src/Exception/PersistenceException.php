@@ -8,7 +8,7 @@ final class PersistenceException extends \RuntimeException
 {
     public static function missingId(string $className): self
     {
-        return new self(sprintf('Cannot persist an entity "%s" without identifier: CSV ids are assigned by the application, set it before persist().', $className));
+        return new self(sprintf('Cannot persist an entity "%s" without identifier: set it before persist(), or mark the id with #[CsvOm\\GeneratedValue].', $className));
     }
 
     public static function duplicateId(string $className, string $id): self

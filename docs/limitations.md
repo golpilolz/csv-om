@@ -11,12 +11,13 @@
   `rename()`, so readers never see a partial file), and concurrent writers are serialized with `flock()` on a
   `.<file>.lock` file kept next to each data file. But two processes that both load and then flush the same file
   each write their own version, and the last one wins.
+  This also applies to `#[GeneratedValue]` increments: concurrent processes can generate the same id. Use `UUID`.
 - **`flush()` is not a transaction across files.** All changes are validated before any file is written, so a
   bad value writes nothing. If a write fails on disk, files already written keep their changes and the rest stay
   pending for the next `flush()`.
 - **Associations** are resolved through the identity map without proxies: to-one relations load eagerly, to-many
   collections on first access. See [Associations](associations.md) for the limits.
-- **Not supported:** lazy proxies, lifecycle events and listeners, generated ids, composite ids,
+- **Not supported:** lazy proxies, lifecycle events and listeners, composite ids,
   query language or query builder, schema tooling.
 
 ## Deprecations

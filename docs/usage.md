@@ -48,7 +48,7 @@ $repository->findOneByTitle('Dune');
 ## Writing
 
 ```php
-$om->persist(new Book(8, 'Second Foundation')); // id must be set
+$om->persist(new Book(8, 'Second Foundation')); // id must be set (unless the id is #[GeneratedValue])
 $om->remove($om->find(Book::class, 9));
 $book->setPrice(4.0);                            // managed objects are tracked, no persist() needed
 
@@ -61,7 +61,7 @@ $om->flush();
   for them.
 - New rows are appended in `persist()` order. If the file doesn't exist, it is created with the mapped columns as
   header.
-- `persist()` throws a `PersistenceException` when the id is not set, or when it is already managed or present
+- `persist()` throws a `PersistenceException` when the id is not set and not generated, or when it is already managed or present
   in the file, even if that row was never loaded. To reuse the id of a removed entity, flush the removal first.
 - `remove()` on a new, unflushed object cancels its insertion; `persist()` on a removed object cancels the removal.
 - `contains($object)` tells whether an object is managed and not scheduled for removal.

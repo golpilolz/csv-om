@@ -15,6 +15,7 @@ use Golpilolz\CsvOm\Om\Mapping\ManyToOne;
 use Golpilolz\CsvOm\Om\Mapping\OneToMany;
 use Golpilolz\CsvOm\Om\Mapping\OneToOne;
 use Golpilolz\CsvOm\Om\Mapping\Entity;
+use Golpilolz\CsvOm\Om\Mapping\GeneratedValue;
 use Golpilolz\CsvOm\Om\Mapping\Id;
 use Golpilolz\CsvOm\Om\Mapping\Types;
 use Golpilolz\CsvOm\Om\Repository\CSVRepository;
@@ -138,6 +139,8 @@ final class MetadataFactory
             throw MappingException::nullableId($className, $idMapping->fieldName);
         }
 
+        $idGenerator = $this->resolveIdGenerator($class, $idMapping);
+
         $repositoryClass = $entity->repositoryClass ?? CSVRepository::class;
         if (!class_exists($repositoryClass) || !is_subclass_of($repositoryClass, RepositoryInterface::class)) {
             throw MappingException::invalidRepositoryClass($className, $repositoryClass);
@@ -162,6 +165,7 @@ final class MetadataFactory
             delimiter: $entity->delimiter,
             enclosure: $entity->enclosure,
             associationMappings: $associationMappings,
+            idGenerator: $idGenerator,
         );
     }
 
@@ -257,6 +261,42 @@ final class MetadataFactory
         );
 
         return new AssociationMapping($field, $type, $target, $mappedBy, $inversedBy, in_array('persist', $attribute->getCascade(), true), $nullable, $joinMapping, $onDelete);
+    }
+
+    /**
+     * @param \ReflectionClass<object> $class
+     */
+    private function resolveIdGenerator(\ReflectionClass $class, FieldMapping $idMapping): ?string
+    {
+        $className = $class->getName();
+        $generator = null;
+        foreach ($class->getProperties() as $property) {
+            $attributes = $property->getAttributes(GeneratedValue::class);
+            if ($attributes === []) {
+                continue;
+            }
+            if ($property->getName() !== $idMapping->fieldName) {
+                throw MappingException::generatedValueNotOnId($className, $property->getName());
+            }
+            $generator = $attributes[0]->newInstance()->strategy;
+        }
+        if ($generator === null) {
+            return null;
+        }
+
+        $field = $idMapping->fieldName;
+        if ($idMapping->enumType !== null) {
+            throw MappingException::invalidGeneratedValue($className, $field, 'the id cannot be an enum');
+        }
+        match ($generator) {
+            GeneratedValue::INCREMENT => $idMapping->type === Types::INT
+                || throw MappingException::invalidGeneratedValue($className, $field, 'INCREMENT needs an int id'),
+            GeneratedValue::UUID => $idMapping->type === Types::STRING
+                || throw MappingException::invalidGeneratedValue($className, $field, 'UUID needs a string id'),
+            default => throw MappingException::invalidGeneratedValue($className, $field, sprintf('unknown strategy "%s"', $generator)),
+        };
+
+        return $generator;
     }
 
     /**

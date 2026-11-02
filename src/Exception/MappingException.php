@@ -38,6 +38,16 @@ final class MappingException extends \LogicException
         return new self(sprintf('Identifier "%s::$%s" must be of type "int" or "string", "%s" given.', $className, $field, $type));
     }
 
+    public static function generatedValueNotOnId(string $className, string $field): self
+    {
+        return new self(sprintf('#[CsvOm\\GeneratedValue] on "%s::$%s": it can only be used on the #[CsvOm\\Id] property.', $className, $field));
+    }
+
+    public static function invalidGeneratedValue(string $className, string $field, string $reason): self
+    {
+        return new self(sprintf('Invalid #[CsvOm\\GeneratedValue] on "%s::$%s": %s.', $className, $field, $reason));
+    }
+
     public static function nullableId(string $className, string $field): self
     {
         return new self(sprintf('Identifier "%s::$%s" cannot be nullable.', $className, $field));

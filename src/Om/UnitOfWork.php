@@ -11,6 +11,7 @@ use Golpilolz\CsvOm\Exception\QueryException;
 use Golpilolz\CsvOm\Exception\StorageException;
 use Golpilolz\CsvOm\Om\Hydrator\ObjectHydrator;
 use Golpilolz\CsvOm\Om\Collection\Collection;
+use Golpilolz\CsvOm\Om\Mapping\GeneratedValue;
 use Golpilolz\CsvOm\Om\Mapping\JoinColumn;
 use Golpilolz\CsvOm\Om\Mapping\Types;
 use Golpilolz\CsvOm\Om\Metadata\AssociationMapping;
@@ -143,6 +144,15 @@ final class UnitOfWork
         }
 
         $id = $this->hydrator->extractId($metadata, $object);
+        if ($id === null && $metadata->idGenerator !== null) {
+            $id = $this->generateId($metadata);
+            $this->hydrator->setProperty(
+                $metadata->className,
+                $object,
+                $metadata->idField,
+                $this->converter->toPhp($id, $metadata->getIdMapping()),
+            );
+        }
         if ($id === null) {
             throw PersistenceException::missingId($metadata->className);
         }
@@ -159,6 +169,33 @@ final class UnitOfWork
                 $this->hydrator->setProperty($metadata->className, $object, $field, new Collection());
             }
         }
+    }
+
+    /**
+     * Canonical id for a new object of a class with a generated id. Ids of new and removed-but-unflushed
+     * objects are in the identity map, so they count as used.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function generateId(ClassMetadata $metadata): string
+    {
+        if ($metadata->idGenerator === GeneratedValue::UUID) {
+            $bytes = random_bytes(16);
+            $bytes[6] = chr((ord($bytes[6]) & 0x0F) | 0x40);
+            $bytes[8] = chr((ord($bytes[8]) & 0x3F) | 0x80);
+
+            return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+        }
+
+        $max = 0;
+        foreach ($this->getTable($metadata)->rows->ids() as $id) {
+            $max = max($max, (int) $id);
+        }
+        foreach (array_keys($this->identityMap[$metadata->className] ?? []) as $id) {
+            $max = max($max, (int) $id);
+        }
+
+        return (string) ($max + 1);
     }
 
     /**
