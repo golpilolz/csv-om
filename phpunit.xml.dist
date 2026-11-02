@@ -4,13 +4,18 @@
          bootstrap="vendor/autoload.php"
          colors="true"
          failOnRisky="true"
-         failOnWarning="true">
+         failOnWarning="true"
+         failOnDeprecation="true"
+         failOnPhpunitDeprecation="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
+         displayDetailsOnPhpunitDeprecations="true">
   <testsuites>
     <testsuite name="GolpilolzCsvOm Test Suite">
       <directory>tests/</directory>
     </testsuite>
   </testsuites>
-  <source>
+  <!-- Symfony reports deprecations with @trigger_error(): count them anyway. -->
+  <source ignoreSuppressionOfDeprecations="true">
     <include>
       <directory suffix=".php">src/</directory>
     </include>

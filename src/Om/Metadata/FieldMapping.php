@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Om\Metadata;
 
-final class FieldMapping
+final readonly class FieldMapping
 {
     /**
      * @param string $type One of the {@see \Golpilolz\CsvOm\Om\Mapping\Types} constants.
@@ -12,12 +12,12 @@ final class FieldMapping
      * @param string|null $format Date format, set for datetime columns only.
      */
     public function __construct(
-        public readonly string $fieldName,
-        public readonly string $columnName,
-        public readonly string $type,
-        public readonly bool $nullable,
-        public readonly ?string $enumType = null,
-        public readonly ?string $format = null,
+        public string $fieldName,
+        public string $columnName,
+        public string $type,
+        public bool $nullable,
+        public ?string $enumType = null,
+        public ?string $format = null,
     ) {
     }
 }

@@ -20,7 +20,7 @@ use League\Csv\Writer;
 final class CsvStorage implements CsvStorageInterface
 {
     /** RFC 4180: quotes are escaped by doubling them, no backslash escape. */
-    private const ESCAPE = '';
+    private const string ESCAPE = '';
 
     private readonly string $directory;
 
@@ -174,8 +174,8 @@ final class CsvStorage implements CsvStorageInterface
     private function orderRow(string $path, int $index, array $header, array $row): array
     {
         if (count($row) !== count($header) || array_diff_key(array_flip($header), $row) !== []) {
-            $missing = array_diff($header, array_map('strval', array_keys($row)));
-            $extra = array_diff(array_map('strval', array_keys($row)), $header);
+            $missing = array_diff($header, array_map(strval(...), array_keys($row)));
+            $extra = array_diff(array_map(strval(...), array_keys($row)), $header);
 
             throw StorageException::invalidRow($path, $index, trim(
                 ($missing ? 'missing columns ' . implode(', ', $missing) . ' ' : '')

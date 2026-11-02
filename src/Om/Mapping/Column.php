@@ -10,7 +10,7 @@ use Attribute;
  * Maps a property to a CSV column.
  */
 #[Attribute(Attribute::TARGET_PROPERTY)]
-final class Column
+final readonly class Column
 {
     /**
      * @param string|null $name Column name in the CSV header. Defaults to the property name.
@@ -20,10 +20,10 @@ final class Column
      *                            Defaults to {@see \DateTimeInterface::ATOM}.
      */
     public function __construct(
-        public readonly ?string $name = null,
-        public readonly ?string $type = null,
-        public readonly ?bool $nullable = null,
-        public readonly ?string $format = null,
+        public ?string $name = null,
+        public ?string $type = null,
+        public ?bool $nullable = null,
+        public ?string $format = null,
     ) {
     }
 }

@@ -23,9 +23,9 @@ use Golpilolz\CsvOm\Storage\CsvStorageInterface;
  */
 final class UnitOfWork
 {
-    private const STATE_MANAGED = 1;
-    private const STATE_NEW = 2;
-    private const STATE_REMOVED = 3;
+    private const int STATE_MANAGED = 1;
+    private const int STATE_NEW = 2;
+    private const int STATE_REMOVED = 3;
 
     /** @var array<class-string, Table> */
     private array $tables = [];

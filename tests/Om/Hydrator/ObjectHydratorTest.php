@@ -20,7 +20,7 @@ final class ObjectHydratorTest extends TestCase
     private MetadataFactory $metadata;
     private ObjectHydrator $hydrator;
 
-    private const BOOK_ROW = [
+    private const array BOOK_ROW = [
         'id' => '7',
         'book_title' => 'Dune',
         'price' => '9.99',

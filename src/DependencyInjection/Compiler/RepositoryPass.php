@@ -16,7 +16,7 @@ use Symfony\Component\DependencyInjection\Reference;
  */
 final class RepositoryPass implements CompilerPassInterface
 {
-    public const TAG = 'golpilolz_csv_om.repository';
+    public const string TAG = 'golpilolz_csv_om.repository';
 
     public function process(ContainerBuilder $container): void
     {

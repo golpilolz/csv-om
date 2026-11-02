@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Context
 
-`golpilolz/csv-om` is a Symfony bundle (PHP >= 8.3, Symfony 6.4|7, `league/csv`) providing a Doctrine-like object manager backed by CSV files. This directory is its own git repo, installed as a Composer VCS clone inside the dev harness app at `../../../` (`website/`). The harness app exercises the bundle via `App\Entity\Test` and data in `website/csv/`; see the harness's `CLAUDE.md` for the Docker setup.
+`golpilolz/csv-om` is a Symfony bundle (PHP >= 8.3, Symfony 7.4|8, `league/csv`) providing a Doctrine-like object manager backed by CSV files. This directory is its own git repo, installed as a Composer VCS clone inside the dev harness app at `../../../` (`website/`). The harness app exercises the bundle via `App\Entity\Test` and data in `website/csv/`; see the harness's `CLAUDE.md` for the Docker setup.
 
 ## Tests
 
@@ -20,7 +20,11 @@ docker run --rm -u $(id -u):$(id -g) -v "$PWD":/app -w /app composer:2 \
 
 `phpunit.xml.dist` sets `failOnRisky` and `failOnWarning`. Tests live under `tests/` (namespace `Golpilolz\CsvOm\Tests\`). No linter or static analysis is configured. `config.platform.php` is pinned to 8.3.0 so dependencies resolve for the minimum supported PHP; also check on `php:8.3-cli` (`vendor/bin/phpunit` only, no composer in that image).
 
-CI (`.github/workflows/tests.yml`) runs PHP 8.3/8.4/8.5 × Symfony 6.4/7.4 with the platform pin removed, plus a `--prefer-lowest` job (PHP 8.3, Symfony 6.4) that guards the lower bounds in `composer.json`: when raising or adding a requirement, keep that job green. Lint workflow changes with `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7`.
+CI (`.github/workflows/tests.yml`) runs PHP 8.3/8.4/8.5 × Symfony 7.4/8 (no Symfony 8 on PHP 8.3) with the platform pin removed, a `--prefer-lowest` job (PHP 8.3, Symfony 7.4) that guards the lower bounds in `composer.json` (when raising or adding a requirement, keep that job green), and a Rector dry-run job.
+
+Deprecations fail the suite: `phpunit.xml.dist` has `failOnDeprecation` and `ignoreSuppressionOfDeprecations` (Symfony triggers them with `@trigger_error`). PHPUnit prints "OK, but there were issues!" yet exits 1 in that case.
+
+Rector (`rector.php`, `composer rector` / `composer rector:fix`) is upgrade-only: PHP sets from the `php` constraint, Symfony/PHPUnit sets from installed versions — run it with the default install (platform pin → Symfony 7.4) so it never applies 8.x-only rules. Skipped on purpose (reasons in `rector.php`): `ReadOnlyPropertyRector` (entities are mutated from outside), `ClassPropertyAssignToConstructorPromotionRector` (changes property order = CSV column order), `ContainerBuilderCompileEnvArgumentRector`. Lint workflow changes with `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7`.
 
 ## Architecture & status
 

@@ -27,7 +27,7 @@ final class ObjectManagerTest extends TestCase
     use CsvDirectoryTrait;
 
     // Book: ";" delimiter, "'" enclosure, unmapped "isbn" column, id "007" stored with leading zeros.
-    private const BOOKS = <<<CSV
+    private const string BOOKS = <<<CSV
         id;book_title;isbn;price;available;published_at;status;priority;notes;legacyCode
         10;Dune;978-0441;9.99;1;1965-08-01T00:00:00+00:00;published;2;;1
         9;Hyperion;978-0553;;0;;draft;;'a; note';2

@@ -9,13 +9,13 @@ namespace Golpilolz\CsvOm\Om\Mapping;
  */
 final class Types
 {
-    public const STRING = 'string';
-    public const INT = 'int';
-    public const FLOAT = 'float';
-    public const BOOL = 'bool';
-    public const DATETIME_IMMUTABLE = 'datetime_immutable';
+    public const string STRING = 'string';
+    public const string INT = 'int';
+    public const string FLOAT = 'float';
+    public const string BOOL = 'bool';
+    public const string DATETIME_IMMUTABLE = 'datetime_immutable';
 
-    public const ALL = [
+    public const array ALL = [
         self::STRING,
         self::INT,
         self::FLOAT,

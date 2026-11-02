@@ -14,7 +14,7 @@ $om->persist(new Book(8, 'Second Foundation'));
 $om->flush(); // rewrites library/books.csv
 ```
 
-Requires PHP 8.3+, Symfony 6.4 or 7.x and [league/csv](https://csv.thephpleague.com/) 9.28+.
+Requires PHP 8.3+, Symfony 7.4 or 8.x (Symfony 8 needs PHP 8.4+) and [league/csv](https://csv.thephpleague.com/) 9.28+.
 
 ## Installation
 
@@ -293,4 +293,12 @@ docker run --rm -u $(id -u):$(id -g) -e COMPOSER_HOME=/tmp/c -v "$PWD":/app -w /
   sh -c 'composer install -q && vendor/bin/phpunit'
 ```
 
-`config.platform.php` is pinned to 8.3 so dependencies resolve for the minimum supported PHP version.
+`config.platform.php` is pinned to 8.3 so dependencies resolve for the minimum supported PHP version
+(and Symfony 7.4). PHPUnit fails on any deprecation, including Symfony's silenced ones.
+
+[Rector](https://getrector.com/) keeps the code free of deprecated PHP, Symfony and PHPUnit usage
+(`rector.php`, upgrade rules only). CI runs the dry run; apply its changes with:
+
+```bash
+docker run --rm -u $(id -u):$(id -g) -v "$PWD":/app -w /app composer:2 composer rector:fix
+```

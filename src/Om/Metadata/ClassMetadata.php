@@ -9,10 +9,10 @@ namespace Golpilolz\CsvOm\Om\Metadata;
  *
  * @template T of object
  */
-final class ClassMetadata
+final readonly class ClassMetadata
 {
     /** @var array<string, string> column name => field name */
-    private readonly array $columnToField;
+    private array $columnToField;
 
     /**
      * @param class-string<T> $className
@@ -22,13 +22,13 @@ final class ClassMetadata
      * @param string|null $enclosure null means "use the configured default"
      */
     public function __construct(
-        public readonly string $className,
-        public readonly string $file,
-        public readonly string $repositoryClass,
-        public readonly string $idField,
-        public readonly array $fieldMappings,
-        public readonly ?string $delimiter = null,
-        public readonly ?string $enclosure = null,
+        public string $className,
+        public string $file,
+        public string $repositoryClass,
+        public string $idField,
+        public array $fieldMappings,
+        public ?string $delimiter = null,
+        public ?string $enclosure = null,
     ) {
         $columnToField = [];
         foreach ($fieldMappings as $mapping) {
