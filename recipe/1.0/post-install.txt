@@ -1,0 +1,7 @@
+  * <bg=blue;fg=white>golpilolz/csv-om</> installed:
+
+    1. Map a class with <comment>Golpilolz\CsvOm\Om\Mapping</> attributes (<comment>#[Entity]</>, <comment>#[Id]</>, <comment>#[Column]</>).
+    2. Put its CSV file (header row required) in the new <comment>csv/</> directory.
+    3. Inject <comment>Golpilolz\CsvOm\Om\ObjectManagerInterface</> and call <comment>find()</>, <comment>persist()</>, <comment>flush()</>.
+
+    Docs: vendor/golpilolz/csv-om/README.md

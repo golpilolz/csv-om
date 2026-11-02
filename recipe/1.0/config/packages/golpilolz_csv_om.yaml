@@ -1,0 +1,6 @@
+golpilolz_csv_om:
+    # Directory holding the CSV files (must exist).
+    directory: '%kernel.project_dir%/csv'
+    # Default field delimiter and enclosure (one character each), overridable per entity.
+    delimiter: ','
+    enclosure: '"'

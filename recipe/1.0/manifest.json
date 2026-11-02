@@ -1,0 +1,9 @@
+{
+    "bundles": {
+        "Golpilolz\\CsvOm\\GolpilolzCsvOmBundle": ["all"]
+    },
+    "copy-from-recipe": {
+        "config/": "%CONFIG_DIR%/",
+        "csv/": "csv/"
+    }
+}

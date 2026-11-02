@@ -32,7 +32,7 @@ The package is not on Packagist. Add the repository, then require it:
 composer require golpilolz/csv-om:dev-main
 ```
 
-There is no Flex recipe. Register the bundle in `config/bundles.php`:
+A draft Flex recipe is in [`recipe/`](recipe/README.md) (not published yet, so it is not applied automatically). Register the bundle in `config/bundles.php`:
 
 ```php
 return [
