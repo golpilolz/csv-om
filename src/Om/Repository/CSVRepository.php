@@ -4,48 +4,72 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Om\Repository;
 
-use Golpilolz\CsvOm\Client\CSVClientInterface;
-use Golpilolz\CsvOm\Om\QueryBuilder;
+use Golpilolz\CsvOm\Om\CSVObjectManagerInterface;
 
-final class CSVRepository implements RepositoryInterface
+/**
+ * Default repository. Extend it to add custom finders:
+ *
+ *     #[CsvOm\Entity(repositoryClass: BookRepository::class)]
+ *     class Book {}
+ *
+ *     class BookRepository extends CSVRepository
+ *     {
+ *         public function findPublished(): array { return $this->findBy(['status' => BookStatus::Published]); }
+ *     }
+ *
+ * Queries run on the data as loaded from the file (like Doctrine queries the database): unflushed
+ * changes to objects are not taken into account for filtering and sorting.
+ *
+ * @template T of object
+ * @implements RepositoryInterface<T>
+ */
+class CSVRepository implements RepositoryInterface
 {
-    public ?string $prefix = null;
-    public ?string $className = null;
-    protected ?CSVClientInterface $csvClient = null;
-
     /**
-     * @inheritdoc
+     * @param class-string<T> $className
      */
-    public function findBy(array $criteria, ?array $orderBy = null, ?int $limit = null, ?int $offset = 0, array $additionalRangeFilters = []): array
+    public function __construct(
+        protected readonly CSVObjectManagerInterface $objectManager,
+        protected readonly string $className,
+    ) {
+    }
+
+    public function find(mixed $id): ?object
     {
-        $data = $this->csvClient->search(
-            $this->prefix,
+        return $this->objectManager->find($this->className, $id);
+    }
+
+    public function findAll(): array
+    {
+        return $this->findBy([]);
+    }
+
+    public function findBy(array $criteria, ?array $orderBy = null, ?int $limit = null, ?int $offset = null): array
+    {
+        return $this->objectManager->getUnitOfWork()->findBy(
+            $this->objectManager->getClassMetadata($this->className),
             $criteria,
-            []
+            $orderBy ?? [],
+            $limit,
+            $offset ?? 0,
         );
-
-        return $data;
     }
 
-    public function find($identifier): ?object
+    public function findOneBy(array $criteria, ?array $orderBy = null): ?object
     {
-        $object = $this->csvClient->search(
-            $this->prefix,
-            ['id' => $identifier],
-            []
-        );
-
-        return $object;
+        return $this->findBy($criteria, $orderBy, 1)[0] ?? null;
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function createQueryBuilder(): QueryBuilder
+    public function count(array $criteria = []): int
     {
-        return new QueryBuilder(
-            csvClient: $this->csvClient,
+        return $this->objectManager->getUnitOfWork()->count(
+            $this->objectManager->getClassMetadata($this->className),
+            $criteria,
         );
     }
 
+    public function getClassName(): string
+    {
+        return $this->className;
+    }
 }

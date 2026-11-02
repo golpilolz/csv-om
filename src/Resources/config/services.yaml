@@ -4,10 +4,17 @@ services:
   golpilolz_csv_om.metadata_factory:
     class: Golpilolz\CsvOm\Om\Metadata\MetadataFactory
 
+  golpilolz_csv_om.storage:
+    class: Golpilolz\CsvOm\Storage\CsvStorage
+    arguments:
+      # Made configurable in step 7 (golpilolz_csv_om.directory).
+      $directory: '%kernel.project_dir%/csv'
+
   golpilolz_csv_om.object_manager:
     class: Golpilolz\CsvOm\Om\CSVObjectManager
     public: true
     arguments:
+      $storage: '@golpilolz_csv_om.storage'
       $metadataFactory: '@golpilolz_csv_om.metadata_factory'
 
   Golpilolz\CsvOm\Om\CSVObjectManagerInterface:
@@ -15,3 +22,6 @@ services:
 
   Golpilolz\CsvOm\Om\Metadata\MetadataFactory:
     alias: golpilolz_csv_om.metadata_factory
+
+  Golpilolz\CsvOm\Storage\CsvStorageInterface:
+    alias: golpilolz_csv_om.storage

@@ -6,36 +6,30 @@ namespace Golpilolz\CsvOm\Tests\Storage;
 
 use Golpilolz\CsvOm\Exception\StorageException;
 use Golpilolz\CsvOm\Storage\CsvStorage;
+use Golpilolz\CsvOm\Tests\CsvDirectoryTrait;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class CsvStorageTest extends TestCase
 {
-    private string $dir;
+    use CsvDirectoryTrait;
+
     private CsvStorage $storage;
 
     protected function setUp(): void
     {
-        $this->dir = sys_get_temp_dir() . '/csv-om-' . bin2hex(random_bytes(6));
-        mkdir($this->dir);
+        $this->createCsvDirectory();
         $this->storage = new CsvStorage($this->dir . '/');
     }
 
     protected function tearDown(): void
     {
-        $it = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($it as $file) {
-            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
-        }
-        rmdir($this->dir);
+        $this->removeCsvDirectory();
     }
 
     private function put(string $file, string $content): void
     {
-        file_put_contents($this->dir . '/' . $file, $content);
+        $this->putCsv($file, $content);
     }
 
     public function testReadReturnsHeaderAndRowsKeyedByColumn(): void
@@ -79,6 +73,16 @@ final class CsvStorageTest extends TestCase
         self::assertSame([], $this->storage->read('header.csv')->rows);
         self::assertSame([], $this->storage->read('empty.csv')->header);
         self::assertSame([], $this->storage->read('empty.csv')->rows);
+    }
+
+    public function testMissingBaseDirectoryIsAConfigurationError(): void
+    {
+        $storage = new CsvStorage($this->dir . '/nope');
+
+        $this->expectException(StorageException::class);
+        $this->expectExceptionMessage('CSV directory "' . $this->dir . '/nope" does not exist');
+
+        $storage->exists('test.csv');
     }
 
     public function testExists(): void
@@ -244,14 +248,5 @@ final class CsvStorageTest extends TestCase
         $this->expectExceptionMessage('duplicate column "id"');
 
         $this->storage->write('test.csv', ['id', 'id'], []);
-    }
-
-    /** @return list<string> */
-    private function listDir(): array
-    {
-        $files = array_values(array_diff(scandir($this->dir), ['.', '..']));
-        sort($files);
-
-        return $files;
     }
 }

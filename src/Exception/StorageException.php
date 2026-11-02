@@ -11,6 +11,11 @@ final class StorageException extends \RuntimeException
         return new self(sprintf('CSV file "%s" must be a non-empty relative path without "..".', $file));
     }
 
+    public static function directoryNotFound(string $directory): self
+    {
+        return new self(sprintf('CSV directory "%s" does not exist.', $directory));
+    }
+
     public static function fileNotFound(string $path): self
     {
         return new self(sprintf('CSV file "%s" does not exist.', $path));

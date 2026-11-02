@@ -24,6 +24,8 @@ final class CsvStorage implements CsvStorageInterface
 
     private readonly string $directory;
 
+    private bool $directoryChecked = false;
+
     public function __construct(
         string $directory,
         private readonly string $delimiter = ',',
@@ -212,6 +214,14 @@ final class CsvStorage implements CsvStorageInterface
 
     private function path(string $file): string
     {
+        // A missing base directory is a configuration error: report it instead of treating every file as missing.
+        if (!$this->directoryChecked) {
+            if (!is_dir($this->directory)) {
+                throw StorageException::directoryNotFound($this->directory);
+            }
+            $this->directoryChecked = true;
+        }
+
         $normalized = str_replace('\\', '/', $file);
         if ($normalized === '' || str_starts_with($normalized, '/') || preg_match('#^[a-zA-Z]:#', $normalized)
             || in_array('..', explode('/', $normalized), true)) {

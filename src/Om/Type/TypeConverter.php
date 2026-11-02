@@ -80,6 +80,27 @@ final class TypeConverter
         };
     }
 
+    /**
+     * Canonical CSV representation of a value given by user code (criteria, identifiers) or read from a file.
+     *
+     * Strings are parsed for non-string types, so 7, '7' and '007' all give '7' for an int field.
+     * An empty string is null for nullable fields.
+     *
+     * @throws ConversionException
+     */
+    public function canonicalize(mixed $value, FieldMapping $mapping): ?string
+    {
+        if ($value === null || ($value === '' && $mapping->nullable)) {
+            return null;
+        }
+
+        if (is_string($value) && ($mapping->type !== Types::STRING || $mapping->enumType !== null)) {
+            $value = $this->toPhp($value, $mapping);
+        }
+
+        return $this->toCsv($value, $mapping);
+    }
+
     private function parseInt(string $value, string $field): int
     {
         if (preg_match('/^([+-]?)0*(\d+)$/', $value, $m) !== 1) {

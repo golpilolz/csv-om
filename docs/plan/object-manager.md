@@ -107,13 +107,22 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
      bool written `1`/`0`, read `1/0/true/false`. Hydration bypasses the constructor and sets properties via a
      closure bound to the declaring class (private/readonly OK). Column order = reflection order: own properties
      first, then inherited ones. `extractId()` returns the id as written in CSV (null when unset).
-5. **Read path**
+5. **Read path** — ✅ done
    - Decide how a file header that differs from the mapped columns is handled. Mapped column missing → error.
      Extra, unmapped columns: since `flush()` rewrites the file from mapped columns only, they would be silently
      dropped. Either reject them on read or keep them per row and write them back (preferred: no data loss).
+     **Decided: keep them per row and write them back.** `Table::$extraColumns` + raw rows hold them; step 6 merges.
    - `UnitOfWork` identity map + table cache; `ObjectManager::find`, `getRepository`;
      `CsvRepository::find/findAll/findBy/findOneBy/count`.
-   - Milestone: `/csv` route in the test app returns `Test#1 margot`.
+   - Milestone: `/csv` route in the test app returns `Test#1 margot`. ✅ verified.
+   - Done as: `UnitOfWork` loads a file once per object manager and converts every row up front (errors surface
+     on first use, with the row id); identity map keyed by canonical id (`7`, `'7'`, `'007'` are the same).
+     Duplicate ids and missing mapped columns throw. Missing file = empty table; missing base directory throws.
+     `findBy` matches canonical values (typed criteria, list = IN, null = empty cell), sorts on PHP values
+     (stable, nulls first ASC), and works on loaded data (unflushed changes are not considered, like Doctrine).
+     `find('abc')` on an int id returns null. `CSVClient` and `QueryBuilder` removed; `CSVRepository` is
+     extendable (`__construct(objectManager, className)`). Storage directory is hard-coded to
+     `%kernel.project_dir%/csv` in `services.yaml` until step 7.
 6. **Write path**
    - `persist`, `remove`, `flush`, `clear`, `contains`; dirty checking with snapshots; duplicate id detection on insert.
 7. **Bundle integration**

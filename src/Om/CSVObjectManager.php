@@ -4,57 +4,50 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Om;
 
-use Golpilolz\CsvOm\Client\CSVClient;
-use Golpilolz\CsvOm\Client\CSVClientInterface;
+use Golpilolz\CsvOm\Om\Hydrator\ObjectHydrator;
 use Golpilolz\CsvOm\Om\Metadata\ClassMetadata;
 use Golpilolz\CsvOm\Om\Metadata\MetadataFactory;
 use Golpilolz\CsvOm\Om\Repository\RepositoryInterface;
+use Golpilolz\CsvOm\Om\Type\TypeConverter;
+use Golpilolz\CsvOm\Storage\CsvStorageInterface;
 
 final class CSVObjectManager implements CSVObjectManagerInterface
 {
-    /** @var array<class-string, RepositoryInterface> */
+    /** @var array<class-string, RepositoryInterface<object>> */
     private array $repositories = [];
 
-    private CSVClientInterface $csvClient;
-    private MetadataFactory $metadataFactory;
+    private readonly MetadataFactory $metadataFactory;
+    private readonly UnitOfWork $unitOfWork;
 
-    public function __construct(?CSVClientInterface $csvClient = null, ?MetadataFactory $metadataFactory = null)
-    {
-        $this->csvClient = $csvClient ?? new CSVClient();
+    public function __construct(
+        CsvStorageInterface $storage,
+        ?MetadataFactory $metadataFactory = null,
+        ?TypeConverter $converter = null,
+    ) {
+        $converter ??= new TypeConverter();
         $this->metadataFactory = $metadataFactory ?? new MetadataFactory();
+        $this->unitOfWork = new UnitOfWork($storage, new ObjectHydrator($converter), $converter);
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function find(string $className, $id): ?object
+    public function find(string $className, mixed $id): ?object
     {
-        return $this->getRepository($className)->find($id);
+        return $this->unitOfWork->find($this->getClassMetadata($className), $id);
     }
 
-    /**
-     * @inheritdoc
-     */
     public function getRepository(string $className): RepositoryInterface
     {
         $metadata = $this->getClassMetadata($className);
 
-        if (!isset($this->repositories[$metadata->className])) {
-            // Temporary wiring: repositories get storage, hydration and the unit of work in step 5.
-            $repository = new ($metadata->repositoryClass)();
-            $repository->className = $metadata->className;
-            $repository->prefix = $metadata->file;
-            $this->repositories[$metadata->className] = $repository;
-        }
-
-        return $this->repositories[$metadata->className];
+        return $this->repositories[$metadata->className] ??= new ($metadata->repositoryClass)($this, $metadata->className);
     }
 
-    /**
-     * @inheritdoc
-     */
     public function getClassMetadata(string $className): ClassMetadata
     {
         return $this->metadataFactory->getMetadataFor($className);
+    }
+
+    public function getUnitOfWork(): UnitOfWork
+    {
+        return $this->unitOfWork;
     }
 }

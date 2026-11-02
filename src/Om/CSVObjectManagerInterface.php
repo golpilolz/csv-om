@@ -10,12 +10,12 @@ use Golpilolz\CsvOm\Om\Repository\RepositoryInterface;
 interface CSVObjectManagerInterface
 {
     /**
-     * Get object by class name (FQCN) and id.
+     * Get object by class name (FQCN) and id. Returns the same instance for the same id.
      * @template T of object
      * @param class-string<T> $className
      * @return T|null
      */
-    public function find(string $className, $id): ?object;
+    public function find(string $className, mixed $id): ?object;
 
     /**
      * @template T of object
@@ -30,4 +30,6 @@ interface CSVObjectManagerInterface
      * @return ClassMetadata<T>
      */
     public function getClassMetadata(string $className): ClassMetadata;
+
+    public function getUnitOfWork(): UnitOfWork;
 }

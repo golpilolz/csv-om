@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Tests\Fixtures\Entity;
 
-use Golpilolz\CsvOm\Om\Repository\RepositoryInterface;
+use Golpilolz\CsvOm\Om\Repository\CSVRepository;
 
-final class BookRepository implements RepositoryInterface
+/**
+ * @extends CSVRepository<Book>
+ */
+final class BookRepository extends CSVRepository
 {
-    public ?string $prefix = null;
-    public ?string $className = null;
-
-    public function find($identifier): ?object
+    /** @return list<Book> */
+    public function findPublished(): array
     {
-        return null;
+        return $this->findBy(['status' => BookStatus::Published], ['id' => 'ASC']);
     }
 }
