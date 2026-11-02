@@ -64,7 +64,7 @@ The code was adapted from a Redis OM and the CSV side is not implemented:
 - **Writes**: `flush()` rewrites only the files with pending changes: write to a temp file in the same
   directory, under `flock`, then `rename()` (atomic). Header order is taken from metadata.
 - **Dirty checking**: snapshot of the dehydrated row on load; on flush, compare current dehydrated row to snapshot.
-- **Associations**: out of scope for v1 (later: `#[ManyToOne]` storing the related id, lazy loaded).
+- **Associations**: out of scope for v1; planned as step 9 (relations between entities, below).
 - **doctrine/persistence interfaces**: not in v1 (large surface, e.g. `ClassMetadata` ~15 methods).
   The API is kept compatible in naming/signatures so implementing them later is additive. *Pending confirmation.*
 
@@ -146,6 +146,71 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
    - README: installation, configuration, mapping reference, supported types, limitations (whole-file loading,
      no concurrent-write guarantees beyond `flock`, no associations).
 
+9. **Associations** — ⏳ planned
+   Goal: relate entities like Doctrine does, with the same attribute names, so that
+   `$book->author` / `$author->books` work and `flush()` keeps the CSV files consistent.
+
+   ```php
+   #[CsvOm\Entity] class Book {
+       #[CsvOm\Id] public int $id;
+       #[CsvOm\ManyToOne(targetEntity: Author::class, inversedBy: 'books')]
+       #[CsvOm\JoinColumn(name: 'author_id', nullable: true)]   // column holds the author id
+       public ?Author $author = null;
+   }
+   #[CsvOm\Entity] class Author {
+       #[CsvOm\Id] public int $id;
+       #[CsvOm\OneToMany(targetEntity: Book::class, mappedBy: 'author')]
+       public Collection $books;                                  // inverse side: no column
+   }
+   ```
+
+   Relations and where they are stored (CSV has no foreign keys, so the owning side stores the related id):
+
+   | Attribute | Owning side stores | Notes |
+   |---|---|---|
+   | `ManyToOne` | one column with the target id (`JoinColumn(name, nullable)`) | always owning |
+   | `OneToOne` | one column with the target id | owning side; inverse side uses `mappedBy` and has no column |
+   | `OneToMany` | nothing | always inverse of a `ManyToOne` (`mappedBy` required) |
+   | `ManyToMany` | a join file, default `<owner>_<property>.csv`, two id columns (`JoinTable(file, joinColumn, inverseJoinColumn)`) | owning side declares `inversedBy`; inverse side `mappedBy` |
+
+   Steps:
+   a. **Mapping & metadata**: attributes `OneToOne`, `ManyToOne`, `OneToMany`, `ManyToMany`, `JoinColumn`,
+      `JoinTable`; `AssociationMapping` in `ClassMetadata` (separate from `FieldMapping`: not a scalar column).
+      `MetadataFactory` validates: target is a mapped entity, `mappedBy`/`inversedBy` point to a matching
+      association on the other side, collection properties are typed `Collection`/`array`, owning side
+      identified, join column does not clash with a `#[Column]`. Id type of the target drives the column type.
+   b. **Storage of the foreign key**: the join column is an extra mapped column (`''` ↔ `null`), read and written
+      with the existing table machinery; `ManyToMany` join files are tables handled like entity files
+      (header required, unmapped columns kept, atomic write).
+   c. **Hydration**: a relation is resolved through the identity map, so the same id gives the same instance.
+      Decide eager vs lazy: **start eager-on-access via a lazy collection / reference** (no proxies in v1 of this
+      step): `ManyToOne`/`OneToOne` set the target found by `find()` (missing target → `HydrationException`
+      naming entity, id, field, value); `OneToMany`/`ManyToMany` get a `PersistentCollection` (Doctrine-like
+      `Collection`, implementing `ArrayAccess`, `Countable`, `IteratorAggregate`) that loads on first use by
+      scanning the target table (`findBy([mappedBy => owner])`). Proper lazy proxies stay out of scope.
+   d. **Write path**: dehydrate relation to the target's id; the target must be managed or persisted
+      (`persist()` of a source pointing to an unmanaged target throws, unless `cascade: ['persist']`). Dirty
+      checking compares the id cell, so reassigning `$book->author` is a normal update. Only the owning side is
+      written; changes made only on the inverse side are ignored (like Doctrine) and documented. `ManyToMany`
+      diffs the collection against the loaded join rows (insert/delete rows). Order of writes within `flush()`
+      does not matter (no database constraints) but every file is still computed and validated before any write.
+   e. **Integrity on remove**: `remove()` of a target still referenced → choose per association
+      `onDelete: 'RESTRICT'` (default, throws at flush), `'SET NULL'` (nullable join column only) or `'CASCADE'`
+      (also removes referencing objects; `ManyToMany` join rows always removed). Check done at flush, on loaded
+      data (references in files not yet loaded are found by loading the referencing table).
+   f. **Querying**: `findBy`/`count` criteria accept an association (owning side, `ManyToOne`/`OneToOne`) by
+      object or by id (`findBy(['author' => $author])`, list = IN); magic finders work too (`findByAuthor($a)`).
+      Ordering by an association is by target id. No joins or paths (`author.name`): out of scope.
+   g. **Maker & docs**: `MakeCsvEntity` can add a relation; README section "Associations" (relation table,
+      owning vs inverse side, onDelete, limitations); update the "Not supported" list; fixtures `Author`/`Book`
+      already exist in `tests/Fixtures` and are the base for tests.
+   Tests: metadata validation errors, hydration identity (same instance across both sides), update/insert/
+   delete of FK and join rows, `onDelete` behaviours, dangling reference error, criteria by object, flush
+   atomicity with several files, round-trip keeps unmapped columns.
+   Open questions: use `doctrine/collections` as a dependency for `Collection` (preferred, matches the
+   Doctrine-like API) or ship a minimal own implementation; composite/`ManyToMany` extra columns on the join
+   file (not supported initially); self-referencing relations (supported by design, test needed).
+
 ## Follow-up ideas
 
 - Optimistic concurrency: remember each file's mtime/size (or hash) at load and make `flush()` fail, under the
@@ -153,5 +218,5 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
 
 ## Out of scope (v1)
 
-Associations, lazy proxies, lifecycle events, migrations/schema tooling, query language, multi-file transactions
+Lazy proxies (associations themselves are step 9), lifecycle events, migrations/schema tooling, query language, multi-file transactions
 (flush writes files one by one; a failure mid-flush can leave earlier files written).
