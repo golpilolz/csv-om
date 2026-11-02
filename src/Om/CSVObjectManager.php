@@ -46,6 +46,31 @@ final class CSVObjectManager implements CSVObjectManagerInterface
         return $this->metadataFactory->getMetadataFor($className);
     }
 
+    public function persist(object $object): void
+    {
+        $this->unitOfWork->persist($this->getClassMetadata($object::class), $object);
+    }
+
+    public function remove(object $object): void
+    {
+        $this->unitOfWork->remove($this->getClassMetadata($object::class), $object);
+    }
+
+    public function flush(): void
+    {
+        $this->unitOfWork->flush();
+    }
+
+    public function clear(): void
+    {
+        $this->unitOfWork->clear();
+    }
+
+    public function contains(object $object): bool
+    {
+        return $this->unitOfWork->contains($object);
+    }
+
     public function getUnitOfWork(): UnitOfWork
     {
         return $this->unitOfWork;

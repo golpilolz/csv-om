@@ -123,14 +123,25 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
      `find('abc')` on an int id returns null. `CSVClient` and `QueryBuilder` removed; `CSVRepository` is
      extendable (`__construct(objectManager, className)`). Storage directory is hard-coded to
      `%kernel.project_dir%/csv` in `services.yaml` until step 7.
-6. **Write path**
+6. **Write path** — ✅ done
    - `persist`, `remove`, `flush`, `clear`, `contains`; dirty checking with snapshots; duplicate id detection on insert.
+   - Done as: the loaded `Table` is the snapshot (no separate copy); changed rows get mapped cells replaced, unmapped
+     cells and unchanged rows are written back exactly as read. Ids are application-assigned: `persist()` requires
+     one and rejects ids already managed or in the file; changing a managed id fails at flush. `flush()` computes and
+     validates all files before writing any; on an I/O failure, files already written are committed and the rest stay
+     pending. `remove()` of an unflushed new object cancels it; `clear()` also drops loaded tables (files re-read).
+     A removed id can only be reused after the removal is flushed.
 7. **Bundle integration**
    - `Configuration`, extension services, autowiring aliases, repository tag + compiler pass.
    - Update test app: `config/packages/golpilolz_csv_om.yaml`, drop `DATABASE_CSV_DIR`, update `App\Entity\Test`.
 8. **Docs**
    - README: installation, configuration, mapping reference, supported types, limitations (whole-file loading,
      no concurrent-write guarantees beyond `flock`, no associations).
+
+## Follow-up ideas
+
+- Optimistic concurrency: remember each file's mtime/size (or hash) at load and make `flush()` fail, under the
+  write lock, if the file changed since — turns today's silent lost update between processes into an error.
 
 ## Out of scope (v1)
 

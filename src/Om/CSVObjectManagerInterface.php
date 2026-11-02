@@ -31,5 +31,30 @@ interface CSVObjectManagerInterface
      */
     public function getClassMetadata(string $className): ClassMetadata;
 
+    /**
+     * Schedules a new object for insertion on the next flush(). Its identifier must be set.
+     */
+    public function persist(object $object): void;
+
+    /**
+     * Schedules a managed object for removal on the next flush().
+     */
+    public function remove(object $object): void;
+
+    /**
+     * Writes all pending insertions, updates and removals to the CSV files.
+     */
+    public function flush(): void;
+
+    /**
+     * Detaches all objects and forgets loaded files; pending changes are discarded.
+     */
+    public function clear(): void;
+
+    /**
+     * Whether the object is managed (loaded or persisted, and not scheduled for removal).
+     */
+    public function contains(object $object): bool;
+
     public function getUnitOfWork(): UnitOfWork;
 }
