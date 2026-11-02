@@ -83,6 +83,11 @@ final class MappingException extends \LogicException
         return new self(sprintf('Repository "%s" of CSV entity "%s" must exist and implement RepositoryInterface.', $repositoryClass, $className));
     }
 
+    public static function repositoryEntityMismatch(string $repositoryClass, string $expected, string $actual): self
+    {
+        return new self(sprintf('Repository service "%s" is configured for entity "%s" but is used by "%s". Pass "%s::class" to the parent constructor.', $repositoryClass, $actual, $expected, $expected));
+    }
+
     public static function invalidControlCharacter(string $className, string $option, string $value): self
     {
         return new self(sprintf('Option "%s" of CSV entity "%s" must be a single character, "%s" given.', $option, $className, $value));

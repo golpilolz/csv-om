@@ -6,7 +6,7 @@ namespace Golpilolz\CsvOm\Tests\Fixtures\Entity;
 
 use Golpilolz\CsvOm\Om\Mapping as CsvOm;
 
-#[CsvOm\Entity]
+#[CsvOm\Entity(repositoryClass: AuthorRepository::class)]
 final class Author extends Person
 {
     #[CsvOm\Id]

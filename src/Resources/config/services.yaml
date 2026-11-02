@@ -1,24 +1,37 @@
-parameters:
-
 services:
   golpilolz_csv_om.metadata_factory:
     class: Golpilolz\CsvOm\Om\Metadata\MetadataFactory
 
+  golpilolz_csv_om.type_converter:
+    class: Golpilolz\CsvOm\Om\Type\TypeConverter
+
   golpilolz_csv_om.storage:
     class: Golpilolz\CsvOm\Storage\CsvStorage
     arguments:
-      # Made configurable in step 7 (golpilolz_csv_om.directory).
-      $directory: '%kernel.project_dir%/csv'
+      # Set from the bundle configuration by the extension.
+      $directory: ~
+      $delimiter: ~
+      $enclosure: ~
 
   golpilolz_csv_om.object_manager:
-    class: Golpilolz\CsvOm\Om\CSVObjectManager
+    class: Golpilolz\CsvOm\Om\ObjectManager
     public: true
     arguments:
       $storage: '@golpilolz_csv_om.storage'
       $metadataFactory: '@golpilolz_csv_om.metadata_factory'
+      $converter: '@golpilolz_csv_om.type_converter'
+      # Set by RepositoryPass.
+      $repositoryLocator: ~
+
+  Golpilolz\CsvOm\Om\ObjectManagerInterface:
+    alias: golpilolz_csv_om.object_manager
 
   Golpilolz\CsvOm\Om\CSVObjectManagerInterface:
     alias: golpilolz_csv_om.object_manager
+    deprecated:
+      package: golpilolz/csv-om
+      version: '0.1'
+      message: 'The "%alias_id%" service alias is deprecated, type-hint "Golpilolz\CsvOm\Om\ObjectManagerInterface" instead.'
 
   Golpilolz\CsvOm\Om\Metadata\MetadataFactory:
     alias: golpilolz_csv_om.metadata_factory

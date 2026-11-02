@@ -4,18 +4,26 @@ declare(strict_types=1);
 
 namespace Golpilolz\CsvOm\Om\Repository;
 
-use Golpilolz\CsvOm\Om\CSVObjectManagerInterface;
+use Golpilolz\CsvOm\Om\ObjectManagerInterface;
 
 /**
- * Default repository. Extend it to add custom finders:
+ * Default repository. Extend it to add custom finders. To make it an autowirable service (like Doctrine's
+ * ServiceEntityRepository), give it a constructor that passes the entity class:
  *
  *     #[CsvOm\Entity(repositoryClass: BookRepository::class)]
  *     class Book {}
  *
  *     class BookRepository extends CSVRepository
  *     {
+ *         public function __construct(ObjectManagerInterface $objectManager)
+ *         {
+ *             parent::__construct($objectManager, Book::class);
+ *         }
+ *
  *         public function findPublished(): array { return $this->findBy(['status' => BookStatus::Published]); }
  *     }
+ *
+ * Repositories registered as services are autoconfigured and returned by ObjectManager::getRepository().
  *
  * Queries run on the data as loaded from the file (like Doctrine queries the database): unflushed
  * changes to objects are not taken into account for filtering and sorting.
@@ -29,7 +37,7 @@ class CSVRepository implements RepositoryInterface
      * @param class-string<T> $className
      */
     public function __construct(
-        protected readonly CSVObjectManagerInterface $objectManager,
+        protected readonly ObjectManagerInterface $objectManager,
         protected readonly string $className,
     ) {
     }

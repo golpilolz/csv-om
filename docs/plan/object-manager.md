@@ -131,9 +131,15 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
      validates all files before writing any; on an I/O failure, files already written are committed and the rest stay
      pending. `remove()` of an unflushed new object cancels it; `clear()` also drops loaded tables (files re-read).
      A removed id can only be reused after the removal is flushed.
-7. **Bundle integration**
+7. **Bundle integration** — ✅ done
    - `Configuration`, extension services, autowiring aliases, repository tag + compiler pass.
    - Update test app: `config/packages/golpilolz_csv_om.yaml`, drop `DATABASE_CSV_DIR`, update `App\Entity\Test`.
+   - Done as: `Configuration` validates single-character delimiter/enclosure. `CSVObjectManager` renamed
+     `ObjectManager`, new `ObjectManagerInterface`; `CSVObjectManagerInterface` kept as deprecated interface and
+     deprecated service alias. Service repositories use Doctrine's constructor pattern; `RepositoryPass` exposes
+     them through a lazy locator so `getRepository()` returns the autowired instance (entity class checked).
+     `CSVRepository` keeps its name (a case-only rename to `CsvRepository` would break PSR-4 autoloading of old
+     references on case-sensitive filesystems). App verified: `debug:config` and `/csv` OK.
 8. **Docs**
    - README: installation, configuration, mapping reference, supported types, limitations (whole-file loading,
      no concurrent-write guarantees beyond `flock`, no associations).

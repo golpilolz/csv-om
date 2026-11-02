@@ -7,7 +7,7 @@ namespace Golpilolz\CsvOm\Tests\Om;
 use Golpilolz\CsvOm\Exception\ConversionException;
 use Golpilolz\CsvOm\Exception\PersistenceException;
 use Golpilolz\CsvOm\Exception\StorageException;
-use Golpilolz\CsvOm\Om\CSVObjectManager;
+use Golpilolz\CsvOm\Om\ObjectManager;
 use Golpilolz\CsvOm\Storage\CsvStorage;
 use Golpilolz\CsvOm\Storage\CsvStorageInterface;
 use Golpilolz\CsvOm\Storage\CsvTable;
@@ -32,13 +32,13 @@ final class FlushTest extends TestCase
 
         CSV;
 
-    private CSVObjectManager $om;
+    private ObjectManager $om;
 
     protected function setUp(): void
     {
         $this->createCsvDirectory();
         $this->putCsv('library/books.csv', self::BOOKS);
-        $this->om = new CSVObjectManager(new CsvStorage($this->dir));
+        $this->om = new ObjectManager(new CsvStorage($this->dir));
     }
 
     protected function tearDown(): void
@@ -155,7 +155,7 @@ final class FlushTest extends TestCase
         $this->om->persist($author);
         $this->om->flush();
 
-        $other = new CSVObjectManager(new CsvStorage($this->dir));
+        $other = new ObjectManager(new CsvStorage($this->dir));
         $read = $other->find(Author::class, 3);
 
         self::assertNotSame($author, $read);
@@ -332,7 +332,7 @@ final class FlushTest extends TestCase
                 $this->inner->write($file, $header, $rows, $delimiter, $enclosure);
             }
         };
-        $om = new CSVObjectManager($storage);
+        $om = new ObjectManager($storage);
 
         // Author is managed first, so its file is written first.
         $om->persist(new Author(1, 'a'));

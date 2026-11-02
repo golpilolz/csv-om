@@ -8,7 +8,7 @@ use Golpilolz\CsvOm\Exception\ConversionException;
 use Golpilolz\CsvOm\Exception\MappingException;
 use Golpilolz\CsvOm\Exception\QueryException;
 use Golpilolz\CsvOm\Exception\StorageException;
-use Golpilolz\CsvOm\Om\CSVObjectManager;
+use Golpilolz\CsvOm\Om\ObjectManager;
 use Golpilolz\CsvOm\Om\Metadata\MetadataFactory;
 use Golpilolz\CsvOm\Om\Repository\CSVRepository;
 use Golpilolz\CsvOm\Storage\CsvStorage;
@@ -22,7 +22,7 @@ use Golpilolz\CsvOm\Tests\Fixtures\Entity\ProductCategory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-final class CSVObjectManagerTest extends TestCase
+final class ObjectManagerTest extends TestCase
 {
     use CsvDirectoryTrait;
 
@@ -36,13 +36,13 @@ final class CSVObjectManagerTest extends TestCase
 
         CSV;
 
-    private CSVObjectManager $om;
+    private ObjectManager $om;
 
     protected function setUp(): void
     {
         $this->createCsvDirectory();
         $this->putCsv('library/books.csv', self::BOOKS);
-        $this->om = new CSVObjectManager(new CsvStorage($this->dir));
+        $this->om = new ObjectManager(new CsvStorage($this->dir));
     }
 
     protected function tearDown(): void
@@ -59,7 +59,7 @@ final class CSVObjectManagerTest extends TestCase
     public function testClassMetadataComesFromFactory(): void
     {
         $factory = new MetadataFactory();
-        $om = new CSVObjectManager(new CsvStorage($this->dir), $factory);
+        $om = new ObjectManager(new CsvStorage($this->dir), $factory);
 
         self::assertSame($factory->getMetadataFor(Book::class), $om->getClassMetadata(Book::class));
     }
@@ -241,7 +241,7 @@ final class CSVObjectManagerTest extends TestCase
 
     public function testMissingBaseDirectoryThrows(): void
     {
-        $om = new CSVObjectManager(new CsvStorage($this->dir . '/missing'));
+        $om = new ObjectManager(new CsvStorage($this->dir . '/missing'));
 
         $this->expectException(StorageException::class);
         $this->expectExceptionMessage('does not exist');
