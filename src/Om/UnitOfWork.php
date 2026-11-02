@@ -12,8 +12,10 @@ use Golpilolz\CsvOm\Exception\StorageException;
 use Golpilolz\CsvOm\Om\Hydrator\ObjectHydrator;
 use Golpilolz\CsvOm\Om\Collection\Collection;
 use Golpilolz\CsvOm\Om\Mapping\JoinColumn;
+use Golpilolz\CsvOm\Om\Mapping\Types;
 use Golpilolz\CsvOm\Om\Metadata\AssociationMapping;
 use Golpilolz\CsvOm\Om\Metadata\ClassMetadata;
+use Golpilolz\CsvOm\Om\Metadata\FieldMapping;
 use Golpilolz\CsvOm\Om\Metadata\MetadataFactory;
 use Golpilolz\CsvOm\Om\Type\TypeConverter;
 use Golpilolz\CsvOm\Storage\CsvStorageInterface;
@@ -79,7 +81,7 @@ final class UnitOfWork
             return null;
         }
 
-        return $this->materialize($metadata, $canonicalId, $table->rows[$canonicalId]['raw']);
+        return $this->materialize($metadata, $canonicalId, $table->rows[$canonicalId]);
     }
 
     /**
@@ -105,8 +107,8 @@ final class UnitOfWork
         $rows = array_slice($rows, $offset, $limit, true);
 
         $objects = [];
-        foreach ($rows as $id => $row) {
-            $objects[] = $this->identityMap[$metadata->className][(string) $id] ?? $this->materialize($metadata, (string) $id, $row['raw']);
+        foreach ($rows as $id => $raw) {
+            $objects[] = $this->identityMap[$metadata->className][(string) $id] ?? $this->materialize($metadata, (string) $id, $raw);
         }
 
         return $objects;
@@ -220,14 +222,14 @@ final class UnitOfWork
                 (static function () use ($plan, $table): \Generator {
                     foreach ($plan['rows'] as $row) {
                         // Cells in header order; the storage writes them by column name.
-                        yield array_replace(array_fill_keys($table->header, ''), $row['raw']);
+                        yield array_replace(array_fill_keys($table->header, ''), $row);
                     }
                 })(),
                 $metadata->delimiter,
                 $metadata->enclosure,
             );
 
-            $table->rows = $plan['rows'];
+            $table->setRows($plan['rows']);
             foreach ($plan['inserted'] as $oid) {
                 $this->states[$oid]['state'] = self::STATE_MANAGED;
             }
@@ -275,7 +277,7 @@ final class UnitOfWork
     {
         $canonicalId = $this->canonicalId($metadata, $id);
 
-        return $canonicalId === null ? null : ($this->getTable($metadata)->rows[$canonicalId]['raw'] ?? null);
+        return $canonicalId === null ? null : ($this->getTable($metadata)->rows[$canonicalId] ?? null);
     }
 
     /**
@@ -291,7 +293,7 @@ final class UnitOfWork
     /**
      * @param ClassMetadata<object> $metadata
      * @param array<string, object> $objects canonical id => object
-     * @return array{rows: array<string, array{raw: array<string, string>, values: array<string, mixed>, canonical: array<string, ?string>}>, inserted: list<int>, removed: list<int>}|null
+     * @return array{rows: array<string, array<string, string>>, inserted: list<int>, removed: list<int>}|null
      */
     private function computeChanges(ClassMetadata $metadata, array $objects): ?array
     {
@@ -323,17 +325,17 @@ final class UnitOfWork
                 $raw = array_fill_keys($table->extraColumns, '');
                 $inserted[] = $oid;
             } else {
-                if ($this->sameValues($metadata, $cells, $rows[$id]['canonical'])) {
+                if ($this->sameValues($metadata, $cells, $rows[$id])) {
                     continue;
                 }
                 // Keep unmapped cells as read; replace mapped ones.
-                $raw = $rows[$id]['raw'];
+                $raw = $rows[$id];
             }
 
             foreach ($cells as $column => $value) {
                 $raw[$column] = $value ?? '';
             }
-            $rows[$id] = $this->buildRow($metadata, $raw);
+            $rows[$id] = $raw;
             $changed = true;
         }
 
@@ -341,13 +343,15 @@ final class UnitOfWork
     }
 
     /**
+     * Whether the object's cells equal the loaded row, compared as canonical strings (so `007` and `7` are equal).
+     *
      * @param array<string, ?string> $cells column => canonical value, from the object
-     * @param array<string, ?string> $canonical field => canonical value, from the table
+     * @param array<string, string> $raw the row as loaded
      */
-    private function sameValues(ClassMetadata $metadata, array $cells, array $canonical): bool
+    private function sameValues(ClassMetadata $metadata, array $cells, array $raw): bool
     {
-        foreach ($metadata->columnMappings as $field => $mapping) {
-            if ($cells[$mapping->columnName] !== $canonical[$field]) {
+        foreach ($metadata->columnMappings as $mapping) {
+            if ($cells[$mapping->columnName] !== $this->canonicalCell($metadata, $mapping, $raw[$mapping->columnName])) {
                 return false;
             }
         }
@@ -381,8 +385,9 @@ final class UnitOfWork
 
         $rows = [];
         foreach ($csv->rows as $index => $raw) {
-            $row = $this->buildRow($metadata, $raw);
-            $id = (string) $row['canonical'][$metadata->idField];
+            // Every row is converted once, now, so invalid data is reported on first use; nothing is kept
+            // from the conversion (raw cells only), which keeps the memory of big files low.
+            $id = $this->validateRow($metadata, $raw);
             if (isset($rows[$id])) {
                 throw new StorageException(sprintf(
                     'CSV file "%s" of entity "%s" has duplicate id "%s" (data row %d).',
@@ -392,7 +397,7 @@ final class UnitOfWork
                     $index + 1,
                 ));
             }
-            $rows[$id] = $row;
+            $rows[$id] = $raw;
         }
 
         return new Table(
@@ -403,27 +408,75 @@ final class UnitOfWork
     }
 
     /**
-     * Converts a raw row once, keeping the raw cells, the PHP values (for sorting) and the canonical
-     * strings (for matching and change detection).
+     * Checks that every mapped cell of a raw row can be converted, and returns the canonical id of the row.
      *
      * @param array<string, string> $raw
-     * @return array{raw: array<string, string>, values: array<string, mixed>, canonical: array<string, ?string>}
      */
-    private function buildRow(ClassMetadata $metadata, array $raw): array
+    private function validateRow(ClassMetadata $metadata, array $raw): string
     {
-        $values = [];
-        $canonical = [];
-        foreach ($metadata->columnMappings as $field => $mapping) {
-            try {
-                $value = $this->converter->toPhp($raw[$mapping->columnName], $mapping);
-                $canonical[$field] = $this->converter->toCsv($value, $mapping);
-            } catch (ConversionException $e) {
-                throw ConversionException::forEntity($metadata->className, $raw[$metadata->getIdColumn()], $e);
+        try {
+            foreach ($metadata->columnMappings as $mapping) {
+                $this->converter->toPhp($raw[$mapping->columnName], $mapping);
             }
-            $values[$field] = $value;
+
+            return (string) $this->converter->toCsv($this->converter->toPhp($raw[$metadata->getIdColumn()], $metadata->getIdMapping()), $metadata->getIdMapping());
+        } catch (ConversionException $e) {
+            throw ConversionException::forEntity($metadata->className, $raw[$metadata->getIdColumn()], $e);
+        }
+    }
+
+    /**
+     * Canonical CSV string of a raw cell: what the value would be written as (`007` => `7`, empty => null when nullable).
+     */
+    private function canonicalCell(ClassMetadata $metadata, FieldMapping $mapping, string $cell): ?string
+    {
+        // Plain strings are their own canonical form (except an empty nullable cell): no conversion needed.
+        if ($mapping->type === Types::STRING && $mapping->enumType === null) {
+            return $cell === '' && $mapping->nullable ? null : $cell;
         }
 
-        return ['raw' => $raw, 'values' => $values, 'canonical' => $canonical];
+        return $this->converter->toCsv($this->converter->toPhp($cell, $mapping), $mapping);
+    }
+
+    /**
+     * Canonical value of one field for every row, computed on first use and kept: only the fields that are
+     * actually filtered on are held in memory.
+     *
+     * @return array<string, ?string> row id => canonical value
+     */
+    private function canonicalColumn(ClassMetadata $metadata, Table $table, string $field): array
+    {
+        if (isset($table->canonicalColumns[$field])) {
+            return $table->canonicalColumns[$field];
+        }
+
+        $mapping = $metadata->columnMappings[$field];
+        $column = [];
+        foreach ($table->rows as $id => $raw) {
+            $column[$id] = $this->canonicalCell($metadata, $mapping, $raw[$mapping->columnName]);
+        }
+
+        return $table->canonicalColumns[$field] = $column;
+    }
+
+    /**
+     * PHP value of one field for every row, for sorting; computed on first use and kept.
+     *
+     * @return array<string, mixed> row id => value
+     */
+    private function valueColumn(ClassMetadata $metadata, Table $table, string $field): array
+    {
+        if (isset($table->valueColumns[$field])) {
+            return $table->valueColumns[$field];
+        }
+
+        $mapping = $metadata->columnMappings[$field];
+        $column = [];
+        foreach ($table->rows as $id => $raw) {
+            $column[$id] = $this->converter->toPhp($raw[$mapping->columnName], $mapping);
+        }
+
+        return $table->valueColumns[$field] = $column;
     }
 
     /**
@@ -866,13 +919,13 @@ final class UnitOfWork
 
     /**
      * @param array<string, mixed> $criteria
-     * @return array<string, array{raw: array<string, string>, values: array<string, mixed>, canonical: array<string, ?string>}>
+     * @return array<string, array<string, string>> raw rows by id
      */
     private function match(ClassMetadata $metadata, array $criteria): array
     {
-        $rows = $this->getTable($metadata)->rows;
+        $table = $this->getTable($metadata);
         if ($criteria === []) {
-            return $rows;
+            return $table->rows;
         }
 
         // Normalize every criterion once: field => list of accepted canonical values.
@@ -896,15 +949,22 @@ final class UnitOfWork
             }
         }
 
-        return array_filter($rows, static function (array $row) use ($accepted): bool {
+        $columns = [];
+        foreach (array_keys($accepted) as $field) {
+            $columns[$field] = $this->canonicalColumn($metadata, $table, $field);
+        }
+
+        $matching = [];
+        foreach ($table->rows as $id => $raw) {
             foreach ($accepted as $field => $values) {
-                if (!in_array($row['canonical'][$field], $values, true)) {
-                    return false;
+                if (!in_array($columns[$field][$id], $values, true)) {
+                    continue 2;
                 }
             }
+            $matching[$id] = $raw;
+        }
 
-            return true;
-        });
+        return $matching;
     }
 
     /**
@@ -925,12 +985,13 @@ final class UnitOfWork
     /**
      * Stable sort on converted PHP values; nulls come first in ascending order.
      *
-     * @param array<string, array{values: array<string, mixed>}> $rows
+     * @param array<string, array<string, string>> $rows raw rows by id
      * @param array<string, string> $orderBy
-     * @return array<string, array{values: array<string, mixed>}>
+     * @return array<string, array<string, string>>
      */
     private function sort(ClassMetadata $metadata, array $rows, array $orderBy): array
     {
+        $table = $this->getTable($metadata);
         $order = [];
         foreach ($orderBy as $field => $direction) {
             if (!$metadata->hasColumnMapping($field)) {
@@ -943,10 +1004,16 @@ final class UnitOfWork
             };
         }
 
-        uasort($rows, static function (array $a, array $b) use ($order): int {
+        $values = [];
+        foreach (array_keys($order) as $field) {
+            $values[$field] = $this->valueColumn($metadata, $table, $field);
+        }
+
+        $ids = array_keys($rows);
+        usort($ids, static function (int|string $a, int|string $b) use ($order, $values): int {
             foreach ($order as $field => $sign) {
-                $x = $a['values'][$field];
-                $y = $b['values'][$field];
+                $x = $values[$field][$a];
+                $y = $values[$field][$b];
                 $cmp = match (true) {
                     $x === null || $y === null => ($x !== null) <=> ($y !== null),
                     $x instanceof \BackedEnum => $x->value <=> $y->value,
@@ -960,6 +1027,11 @@ final class UnitOfWork
             return 0;
         });
 
-        return $rows;
+        $sorted = [];
+        foreach ($ids as $id) {
+            $sorted[$id] = $rows[$id];
+        }
+
+        return $sorted;
     }
 }

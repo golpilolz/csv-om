@@ -15,7 +15,7 @@ Controller / service
    UnitOfWork  ◄──────────── delegates findBy / count
    (identity map, entity states, dirty checking)
         │            │
-        │            └─► Table (loaded file: raw rows, converted values, canonical strings)
+        │            └─► Table (loaded file: raw rows; per-field canonical/value columns built lazily)
         ▼
  MetadataFactory ─► ClassMetadata / FieldMapping     TypeConverter     ObjectHydrator
  (reads attributes)  (cached, one per class)        (cell ↔ PHP)      (row ↔ object)
@@ -45,7 +45,9 @@ Controller / service
 ## Lifecycle of a request
 
 **Read.** `find()` / `findBy()` → `UnitOfWork` loads the entity's file once through `CsvStorage` into a
-`Table`, converting every row with `TypeConverter` and hydrating objects with `ObjectHydrator`. Objects
+`Table`, validating every row with `TypeConverter` (only raw cells are kept) and hydrating objects with
+`ObjectHydrator`. Filters and sorts derive one field's canonical strings / PHP values for all rows on first use and
+cache them in the `Table` (reset when a flush rewrites the rows). Objects
 go in the identity map keyed by canonical id, so later reads return the same instance.
 
 **Write.** `persist()` / `remove()` change an entity's state (managed, new, removed, tracked per
