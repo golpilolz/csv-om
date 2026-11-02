@@ -1,5 +1,7 @@
 # csv-om
 
+[![Tests](https://github.com/golpilolz/csv-om/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/golpilolz/csv-om/actions/workflows/tests.yml?query=branch%3Amain)
+
 A Doctrine-style object manager for Symfony, backed by CSV files: one file is one table, one row is one
 object. You map classes with attributes, then use `find()`, repositories, `persist()` and `flush()` as you
 would with Doctrine ORM.
