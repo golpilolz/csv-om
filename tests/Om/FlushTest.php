@@ -17,6 +17,7 @@ use Golpilolz\CsvOm\Tests\Fixtures\Entity\Book;
 use Golpilolz\CsvOm\Tests\Fixtures\Entity\BookStatus;
 use Golpilolz\CsvOm\Tests\Fixtures\Entity\Priority;
 use Golpilolz\CsvOm\Tests\Fixtures\Entity\ProductCategory;
+use Golpilolz\CsvOm\Tests\Fixtures\Entity\StatusLabel;
 use PHPUnit\Framework\TestCase;
 
 final class FlushTest extends TestCase
@@ -370,6 +371,22 @@ final class FlushTest extends TestCase
         $reloaded = $this->om->find(Book::class, 9);
         self::assertNotSame($book, $reloaded);
         self::assertSame('Edited outside', self::get($reloaded, 'title'));
+    }
+
+    public function testBackedEnumIdentifier(): void
+    {
+        $label = new StatusLabel();
+        $label->status = BookStatus::Published;
+        $label->label = 'Out now';
+        $this->om->persist($label);
+        $this->om->flush();
+        $this->om->clear();
+
+        self::assertSame("status,label\npublished,\"Out now\"\n", file_get_contents($this->dir . '/status_label.csv'));
+        $found = $this->om->find(StatusLabel::class, BookStatus::Published);
+        self::assertSame('Out now', $found?->label);
+        self::assertSame($found, $this->om->find(StatusLabel::class, 'published'));
+        self::assertNull($this->om->find(StatusLabel::class, 'archived'));
     }
 
     public function testDetachedObjectIsIgnoredByFlush(): void

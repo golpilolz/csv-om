@@ -15,14 +15,14 @@ docker run --rm -u $(id -u):$(id -g) -e COMPOSER_HOME=/tmp/c -v "$PWD":/app -w /
   sh -c 'composer install -q && vendor/bin/phpunit'
 # single test / class:
 docker run --rm -u $(id -u):$(id -g) -v "$PWD":/app -w /app composer:2 \
-  vendor/bin/phpunit --filter testExtensionRegistersObjectManager
+  vendor/bin/phpunit --filter testExtensionRegistersServicesAndAliases
 ```
 
 `phpunit.xml.dist` sets `failOnRisky` and `failOnWarning`. Tests live under `tests/` (namespace `Golpilolz\CsvOm\Tests\`). No linter or static analysis is configured. `config.platform.php` is pinned to 8.3.0 so dependencies resolve for the minimum supported PHP; also check on `php:8.3-cli` (`vendor/bin/phpunit` only, no composer in that image).
 
 ## Architecture & status
 
-The code was ported from a Redis OM and is mostly a skeleton — **`docs/plan/object-manager.md` is the roadmap and the source of truth for the target design**; read it before making structural changes. Steps are marked ✅ in the plan as they land; its "Current state" section describes the starting point, not today's code.
+All v1 steps of **`docs/plan/object-manager.md`** are done; it records the design decisions (and follow-up ideas), read it before structural changes. Its "Current state" section describes the original Redis-derived starting point, not today's code. `README.md` is the user documentation: keep it in sync when behavior, options or exceptions change.
 
 Current wiring:
 - `GolpilolzCsvOmBundle` → `GolpilolzCsvOmExtension` processes `Configuration` (`golpilolz_csv_om.directory`/`delimiter`/`enclosure`), loads `Resources/config/services.yaml` and injects the config into `golpilolz_csv_om.storage`. `golpilolz_csv_om.object_manager` (`Om\ObjectManager`, public) is aliased to `Om\ObjectManagerInterface`; `Om\CSVObjectManagerInterface` is a deprecated interface + deprecated alias kept for BC (`ObjectManager` implements it).

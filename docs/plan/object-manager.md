@@ -1,5 +1,7 @@
 # Plan: Doctrine-like Object Manager for CSV files
 
+> **Status:** all v1 steps are done (see ✅ below). User documentation is in `README.md`.
+
 Goal: map PHP classes to CSV files (one file = one table, one row = one object) and expose a
 Doctrine-style API: `find`, `getRepository`, `findBy`, `persist`, `remove`, `flush`.
 
@@ -140,7 +142,7 @@ Each step ends with passing PHPUnit tests (using fixture CSV files in `tests/Fix
      them through a lazy locator so `getRepository()` returns the autowired instance (entity class checked).
      `CSVRepository` keeps its name (a case-only rename to `CsvRepository` would break PSR-4 autoloading of old
      references on case-sensitive filesystems). App verified: `debug:config` and `/csv` OK.
-8. **Docs**
+8. **Docs** — ✅ done
    - README: installation, configuration, mapping reference, supported types, limitations (whole-file loading,
      no concurrent-write guarantees beyond `flock`, no associations).
 
