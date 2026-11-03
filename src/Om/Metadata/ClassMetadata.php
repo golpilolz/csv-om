@@ -70,6 +70,14 @@ final readonly class ClassMetadata
      */
     public function invalidSourcePath(string $path): ?string
     {
+        return self::sourcePathProblem($path, $this->recursive);
+    }
+
+    /**
+     * Same check as {@see self::invalidSourcePath()} for any directory, given whether it is read recursively.
+     */
+    public static function sourcePathProblem(string $path, bool $recursive): ?string
+    {
         $parts = explode('/', str_replace('\\', '/', $path));
         if (str_contains($path, '\\')) {
             return 'use "/" as the path separator';
@@ -85,7 +93,7 @@ final readonly class ClassMetadata
         if (strcasecmp(substr($path, -4), '.csv') !== 0) {
             return 'it must end with ".csv"';
         }
-        if (!$this->recursive && count($parts) > 1) {
+        if (!$recursive && count($parts) > 1) {
             return 'the directory is not read recursively';
         }
 

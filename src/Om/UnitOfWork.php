@@ -58,7 +58,7 @@ final class UnitOfWork
     /** @var array<int, array{class: class-string, id: string, state: int}> spl_object_id => entity state */
     private array $states = [];
 
-    /** @var array<string, array{header: list<string>, extra: list<string>, rows: list<array{raw: array<string, string>, owner: string, target: string}>, fingerprint: string}> "Owner::field" => loaded many-to-many join file */
+    /** @var array<string, array{files: array<string, array{header: list<string>, extra: list<string>, fingerprint: string}>, rows: list<array{raw: array<string, string>, owner: string, target: string, file: string}>, listing: string}> "Owner::field" => loaded many-to-many join file(s) */
     private array $joinTables = [];
 
     private readonly MetadataFactory $metadataFactory;
@@ -296,7 +296,15 @@ final class UnitOfWork
             }
         }
         foreach ($joinPlans as $key => $plan) {
-            $this->assertUnchanged($plan['file'], $this->joinTables[$key]['fingerprint']);
+            foreach ($plan['files'] as $path => $file) {
+                $this->assertUnchanged($path, $file['fingerprint']);
+            }
+            if ($plan['directory'] !== null) {
+                $association = $this->joinAssociation($key);
+                if ($this->listingKey($this->storage->listFiles($plan['directory'], $association->joinRecursive)) !== $this->joinTables[$key]['listing']) {
+                    throw ConcurrentModificationException::forFile($plan['directory']);
+                }
+            }
         }
 
         foreach ($plans as $className => $plan) {
@@ -345,21 +353,26 @@ final class UnitOfWork
         }
 
         foreach ($joinPlans as $key => $plan) {
-            $header = $plan['header'];
-            $fingerprint = $this->storage->write(
-                $plan['file'],
-                $header,
-                (static function () use ($plan, $header): \Generator {
-                    foreach ($plan['rows'] as $row) {
-                        yield array_replace(array_fill_keys($header, ''), $row['raw']);
-                    }
-                })(),
-                $plan['delimiter'],
-                $plan['enclosure'],
-                $this->joinTables[$key]['fingerprint'],
-            );
-            $this->joinTables[$key]['rows'] = $plan['rows'];
-            $this->joinTables[$key]['fingerprint'] = $fingerprint;
+            try {
+                foreach ($plan['files'] as $path => $file) {
+                    $header = $file['header'];
+                    $this->storage->write(
+                        $path,
+                        $header,
+                        (static function () use ($file, $header): \Generator {
+                            foreach ($file['rows'] as $row) {
+                                yield array_replace(array_fill_keys($header, ''), $row['raw']);
+                            }
+                        })(),
+                        $plan['delimiter'],
+                        $plan['enclosure'],
+                        $file['fingerprint'],
+                    );
+                }
+            } finally {
+                // Files changed: the next read loads the join files again.
+                unset($this->joinTables[$key]);
+            }
         }
 
         // Post events fire once every file is written (none fires if a write failed).
@@ -909,10 +922,10 @@ final class UnitOfWork
     }
 
     /**
-     * Loaded many-to-many join file of an owning association.
+     * Loaded many-to-many join file (or directory of join files) of an owning association.
      *
      * @param ClassMetadata<object> $owner
-     * @return array{header: list<string>, extra: list<string>, rows: list<array{raw: array<string, string>, owner: string, target: string}>, fingerprint: string}
+     * @return array{files: array<string, array{header: list<string>, extra: list<string>, fingerprint: string}>, rows: list<array{raw: array<string, string>, owner: string, target: string, file: string}>, listing: string}
      */
     private function joinTable(ClassMetadata $owner, AssociationMapping $association): array
     {
@@ -921,42 +934,78 @@ final class UnitOfWork
             return $this->joinTables[$key];
         }
 
-        $file = (string) $association->joinFile;
         $ownerColumn = (string) $association->joinOwnerColumn;
         $targetColumn = (string) $association->joinTargetColumn;
-        // Taken before reading: if the file changes in between, the flush fails instead of overwriting it.
-        $fingerprint = $this->storage->fingerprint($file);
-        if (!$this->storage->exists($file)) {
-            return $this->joinTables[$key] = ['header' => [$ownerColumn, $targetColumn], 'extra' => [], 'rows' => [], 'fingerprint' => $fingerprint];
+        $default = [$ownerColumn, $targetColumn];
+        $listing = '';
+        if ($association->joinDirectory) {
+            $paths = $this->storage->listFiles((string) $association->joinFile, $association->joinRecursive);
+            $listing = $this->listingKey($paths);
+        } else {
+            $paths = [(string) $association->joinFile];
         }
 
         $target = $this->metadataFactory->getMetadataFor($association->targetEntity);
-        $csv = $this->storage->read($file, $owner->delimiter, $owner->enclosure);
-        $missing = array_diff([$ownerColumn, $targetColumn], $csv->header);
-        if ($missing !== []) {
-            throw new StorageException(sprintf('Join file "%s" of "%s::$%s" is missing columns: %s.', $file, $owner->className, $association->fieldName, implode(', ', $missing)));
-        }
-
+        $files = [];
         $rows = [];
-        foreach ($csv->rows as $index => $raw) {
-            try {
-                $ownerId = $this->converter->canonicalize($raw[$ownerColumn], $owner->getIdMapping());
-                $targetId = $this->converter->canonicalize($raw[$targetColumn], $target->getIdMapping());
-            } catch (ConversionException $e) {
-                throw new StorageException(sprintf('Join file "%s" (data row %d): %s', $file, $index + 1, $e->getMessage()), 0, $e);
+        foreach ($paths as $file) {
+            // Taken before reading: if the file changes in between, the flush fails instead of overwriting it.
+            $fingerprint = $this->storage->fingerprint($file);
+            if (!$this->storage->exists($file)) {
+                $files[$file] = ['header' => $default, 'extra' => [], 'fingerprint' => $fingerprint];
+                continue;
             }
-            if ($ownerId === null || $targetId === null) {
-                throw new StorageException(sprintf('Join file "%s" (data row %d) has an empty id.', $file, $index + 1));
+
+            $csv = $this->storage->read($file, $owner->delimiter, $owner->enclosure);
+            $missing = array_diff($default, $csv->header);
+            if ($missing !== []) {
+                throw new StorageException(sprintf('Join file "%s" of "%s::$%s" is missing columns: %s.', $file, $owner->className, $association->fieldName, implode(', ', $missing)));
             }
-            $rows[] = ['raw' => $raw, 'owner' => $ownerId, 'target' => $targetId];
+
+            foreach ($csv->rows as $index => $raw) {
+                try {
+                    $ownerId = $this->converter->canonicalize($raw[$ownerColumn], $owner->getIdMapping());
+                    $targetId = $this->converter->canonicalize($raw[$targetColumn], $target->getIdMapping());
+                } catch (ConversionException $e) {
+                    throw new StorageException(sprintf('Join file "%s" (data row %d): %s', $file, $index + 1, $e->getMessage()), 0, $e);
+                }
+                if ($ownerId === null || $targetId === null) {
+                    throw new StorageException(sprintf('Join file "%s" (data row %d) has an empty id.', $file, $index + 1));
+                }
+                $rows[] = ['raw' => $raw, 'owner' => $ownerId, 'target' => $targetId, 'file' => $file];
+            }
+            $files[$file] = [
+                'header' => $csv->header,
+                'extra' => array_values(array_diff($csv->header, $default)),
+                'fingerprint' => $fingerprint,
+            ];
         }
 
-        return $this->joinTables[$key] = [
-            'header' => $csv->header,
-            'extra' => array_values(array_diff($csv->header, [$ownerColumn, $targetColumn])),
-            'rows' => $rows,
-            'fingerprint' => $fingerprint,
-        ];
+        return $this->joinTables[$key] = ['files' => $files, 'rows' => $rows, 'listing' => $listing];
+    }
+
+    private function joinAssociation(string $key): AssociationMapping
+    {
+        [$class, $field] = explode('::', $key);
+
+        return $this->metadataFactory->getMetadataFor($class)->getAssociationMapping($field);
+    }
+
+    /**
+     * Path of the file a new pair of a join directory is added to, checked.
+     *
+     * @param ClassMetadata<object> $owner
+     */
+    private function joinTargetFile(ClassMetadata $owner, AssociationMapping $association): string
+    {
+        if (!$association->joinDirectory) {
+            return (string) $association->joinFile;
+        }
+        if ($association->joinNewFile === null) {
+            throw PersistenceException::noJoinTargetFile($owner->className, $association->fieldName);
+        }
+
+        return $association->joinFile . '/' . $association->joinNewFile;
     }
 
     /**
@@ -1138,7 +1187,7 @@ final class UnitOfWork
      * Compares each owning many-to-many collection that was loaded or modified to its join file, and
      * drops the rows of removed objects. Inverse sides are never written.
      *
-     * @return array<string, array{file: string, header: list<string>, rows: list<array{raw: array<string, string>, owner: string, target: string}>, delimiter: ?string, enclosure: ?string}>
+     * @return array<string, array{directory: ?string, files: array<string, array{header: list<string>, fingerprint: string, rows: list<array{raw: array<string, string>, owner: string, target: string, file: string}>}>, delimiter: ?string, enclosure: ?string}>
      */
     private function computeJoinChanges(): array
     {
@@ -1205,11 +1254,11 @@ final class UnitOfWork
             $table = $this->joinTable($owner, $association);
             $kept = [];
             $present = [];
-            $changed = false;
+            $dirty = [];
             foreach ($table['rows'] as $row) {
                 if (isset($removedOwners[$row['owner']]) || isset($removedTargets[$row['target']])
                     || (isset($desired[$row['owner']]) && !in_array($row['target'], $desired[$row['owner']], true))) {
-                    $changed = true;
+                    $dirty[$row['file']] = true;
                     continue;
                 }
                 $present[$row['owner']][$row['target']] = true;
@@ -1220,20 +1269,30 @@ final class UnitOfWork
                     if (isset($present[$ownerId][$targetId])) {
                         continue;
                     }
+                    $file = $this->joinTargetFile($owner, $association);
+                    $extra = $table['files'][$file]['extra'] ?? [];
                     $kept[] = [
-                        'raw' => array_fill_keys($table['extra'], '') + [(string) $association->joinOwnerColumn => (string) $ownerId, (string) $association->joinTargetColumn => $targetId],
+                        'raw' => array_fill_keys($extra, '') + [(string) $association->joinOwnerColumn => (string) $ownerId, (string) $association->joinTargetColumn => $targetId],
                         'owner' => (string) $ownerId,
                         'target' => $targetId,
+                        'file' => $file,
                     ];
-                    $changed = true;
+                    $dirty[$file] = true;
                 }
             }
 
-            if ($changed) {
+            if ($dirty !== []) {
+                $files = [];
+                foreach (array_keys($dirty) as $file) {
+                    $files[$file] = [
+                        'header' => $table['files'][$file]['header'] ?? [(string) $association->joinOwnerColumn, (string) $association->joinTargetColumn],
+                        'fingerprint' => $table['files'][$file]['fingerprint'] ?? Fingerprint::MISSING,
+                        'rows' => array_values(array_filter($kept, static fn (array $row): bool => $row['file'] === $file)),
+                    ];
+                }
                 $plans[$key] = [
-                    'file' => (string) $association->joinFile,
-                    'header' => $table['header'],
-                    'rows' => $kept,
+                    'directory' => $association->joinDirectory ? (string) $association->joinFile : null,
+                    'files' => $files,
                     'delimiter' => $owner->delimiter,
                     'enclosure' => $owner->enclosure,
                 ];

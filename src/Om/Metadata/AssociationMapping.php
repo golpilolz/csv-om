@@ -9,7 +9,7 @@ namespace Golpilolz\CsvOm\Om\Metadata;
  *
  * - owning to-one ({@see self::MANY_TO_ONE}, owning {@see self::ONE_TO_ONE}): stored in a join column of the
  *   entity's own file ({@see self::$joinMapping}, typed like the target id);
- * - owning {@see self::MANY_TO_MANY}: stored in a join file ({@see self::$joinFile});
+ * - owning {@see self::MANY_TO_MANY}: stored in a join file ({@see self::$joinFile}), or in a directory of join files when {@see self::$joinDirectory} (then `joinFile` holds the directory);
  * - inverse sides ({@see self::ONE_TO_MANY}, `mappedBy` set): nothing stored, read from the owning side.
  */
 final readonly class AssociationMapping
@@ -38,6 +38,9 @@ final readonly class AssociationMapping
         public ?string $joinFile = null,
         public ?string $joinOwnerColumn = null,
         public ?string $joinTargetColumn = null,
+        public bool $joinDirectory = false,
+        public bool $joinRecursive = true,
+        public ?string $joinNewFile = null,
     ) {
     }
 

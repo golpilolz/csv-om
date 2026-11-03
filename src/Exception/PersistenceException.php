@@ -11,6 +11,11 @@ final class PersistenceException extends \RuntimeException
         return new self(sprintf('Cannot persist an entity "%s" without identifier: set it before persist(), or mark the id with #[CsvOm\\GeneratedValue].', $className));
     }
 
+    public static function noJoinTargetFile(string $className, string $field): self
+    {
+        return new self(sprintf('Cannot add a pair to the join directory of "%s::$%s": give #[CsvOm\\JoinTable] a "newFile".', ltrim($className, '\\'), $field));
+    }
+
     public static function noTargetFile(string $className): self
     {
         return new self(sprintf('Cannot persist an entity "%s": it has no file to be added to. Set its #[CsvOm\\SourceFile] property, or give #[CsvOm\\Entity] a "newFile".', $className));

@@ -31,7 +31,7 @@ class Author
 | `ManyToOne` | a column in the entity's file (default `<property>_id`, typed like the target id) | always owning; `#[JoinColumn(name, nullable, onDelete)]` |
 | `OneToOne` | owning side: a column as above; inverse side (`mappedBy`): nothing | |
 | `OneToMany` | nothing | always the inverse of a `ManyToOne` (`mappedBy` required) |
-| `ManyToMany` | owning side: a join file with two id columns; inverse side (`mappedBy`): nothing | `#[JoinTable(file, joinColumn, inverseJoinColumn)]`; default file `<owner file>_<property>.csv`, columns `<owner>_id`, `<target>_id` (self-references need explicit names) |
+| `ManyToMany` | owning side: a join file with two id columns; inverse side (`mappedBy`): nothing | `#[JoinTable(file, joinColumn, inverseJoinColumn, directory, recursive, newFile)]`; with `directory` the pairs are spread over every `.csv` file of it (removed pairs leave the file they live in, new pairs go to `newFile`, required to add any); default file `<owner file>_<property>.csv`, columns `<owner>_id`, `<target>_id` (self-references need explicit names) |
 
 - **Same instance everywhere.** Relations go through the identity map, so `$book->author` is the object
   `find(Author::class, …)` returns, and `$author->books` holds the same `Book` instances `findBy()` returns.

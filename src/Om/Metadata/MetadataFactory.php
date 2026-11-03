@@ -249,11 +249,28 @@ final class MetadataFactory
                         ? MappingException::duplicateJoinColumns($className, $field)
                         : MappingException::selfReferencingJoinTable($className, $field);
                 }
-                $file = $joinTable?->file ?? $stem . '_' . self::stem($field) . '.csv';
+                if ($joinTable?->directory !== null && $joinTable->file !== null) {
+                    throw MappingException::invalidDirectoryOptions($className, sprintf('#[JoinTable] of "$%s": "file" and "directory" cannot be used together', $field));
+                }
+                if ($joinTable?->directory === null && ($joinTable?->recursive !== null || $joinTable?->newFile !== null)) {
+                    throw MappingException::invalidDirectoryOptions($className, sprintf('#[JoinTable] of "$%s": "recursive" and "newFile" need a "directory"', $field));
+                }
+                $isDirectory = $joinTable?->directory !== null;
+                $file = $isDirectory
+                    ? rtrim(str_replace('\\', '/', (string) $joinTable->directory), '/')
+                    : ($joinTable?->file ?? $stem . '_' . self::stem($field) . '.csv');
                 if ($file === '' || str_starts_with($file, '/') || in_array('..', explode('/', str_replace('\\', '/', $file)), true)) {
                     throw MappingException::invalidFile($className, $file);
                 }
-                $mapping = ['joinFile' => $file, 'joinOwnerColumn' => $ownerColumn, 'joinTargetColumn' => $targetColumn];
+                $recursive = $joinTable?->recursive ?? true;
+                $newFile = $joinTable?->newFile;
+                if ($newFile !== null && ($reason = ClassMetadata::sourcePathProblem($newFile, $recursive)) !== null) {
+                    throw MappingException::invalidDirectoryOptions($className, sprintf('#[JoinTable] of "$%s": invalid "newFile" "%s": %s', $field, $newFile, $reason));
+                }
+                $mapping = [
+                    'joinFile' => $file, 'joinOwnerColumn' => $ownerColumn, 'joinTargetColumn' => $targetColumn,
+                    'joinDirectory' => $isDirectory, 'joinRecursive' => $recursive, 'joinNewFile' => $newFile,
+                ];
             }
 
             return new AssociationMapping($field, $type, $target, $mappedBy, $inversedBy, in_array('persist', $attribute->getCascade(), true), ...$mapping);
